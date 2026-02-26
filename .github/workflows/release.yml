@@ -24,21 +24,21 @@ jobs:
 
       - name: Create plugin ZIP
         run: |
-          mkdir -p /tmp/release/cig-headless
+          mkdir -p /tmp/release/gn-crm-vue
           rsync -a \
             --exclude='.git' \
             --exclude='.github' \
             --exclude='.DS_Store' \
             --exclude='*.log' \
             --exclude='CLAUDE.md' \
-            ./ /tmp/release/cig-headless/
+            ./ /tmp/release/gn-crm-vue/
           cd /tmp/release
-          zip -r cig-headless-v${{ steps.version.outputs.VERSION }}.zip cig-headless/
-          echo "ZIP: $(ls -lh cig-headless-v${{ steps.version.outputs.VERSION }}.zip)"
+          zip -r gn-crm-vue-v${{ steps.version.outputs.VERSION }}.zip gn-crm-vue/
+          echo "ZIP: $(ls -lh gn-crm-vue-v${{ steps.version.outputs.VERSION }}.zip)"
 
       - name: Upload ZIP to release
         uses: softprops/action-gh-release@v2
         with:
-          files: /tmp/release/cig-headless-v${{ steps.version.outputs.VERSION }}.zip
+          files: /tmp/release/gn-crm-vue-v${{ steps.version.outputs.VERSION }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
