@@ -9,6 +9,20 @@ class CIG_Loader {
 
         // Allow JWT auth via Authorization header (some hosts strip it)
         add_filter( 'rest_pre_dispatch', [ $this, 'set_jwt_user' ], 10, 3 );
+
+        // Add Cache-Control headers for read-heavy GET endpoints
+        add_filter( 'rest_post_dispatch', function( $response, $server, $request ) {
+            if ( $request->get_method() !== 'GET' ) {
+                return $response;
+            }
+            $route = $request->get_route();
+            if ( strpos( $route, '/cig/v1/kpi' ) !== false ) {
+                $response->header( 'Cache-Control', 'private, max-age=30' );
+            } elseif ( preg_match( '#/cig/v1/(customers|users|company)\b#', $route ) ) {
+                $response->header( 'Cache-Control', 'private, max-age=60' );
+            }
+            return $response;
+        }, 10, 3 );
     }
 
     public function register_routes() {

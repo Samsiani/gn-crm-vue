@@ -38,25 +38,17 @@ class CIG_User {
      */
     public static function find_by_login( $username ) {
         global $wpdb;
-        $table = self::table();
-        $q = strtolower( trim( $username ) );
-
-        $rows = $wpdb->get_results(
-            "SELECT * FROM {$table} WHERE is_active = 1",
-            ARRAY_A
-        );
-
-        foreach ( $rows as $row ) {
-            $name_en = strtolower( $row['name_en'] );
-            $first_name = strtolower( explode( ' ', $row['name_en'] )[0] );
-            $avatar = strtolower( $row['avatar'] );
-
-            if ( $name_en === $q || $first_name === $q || $avatar === $q ) {
-                return self::hydrate( $row );
-            }
-        }
-
-        return null;
+        $search = strtolower( trim( $username ) );
+        $row = $wpdb->get_row( $wpdb->prepare(
+            "SELECT * FROM " . self::table() . "
+             WHERE is_active = 1
+               AND ( LOWER(name_en) = %s
+                  OR LOWER(SUBSTRING_INDEX(name_en, ' ', 1)) = %s
+                  OR LOWER(avatar) = %s )
+             LIMIT 1",
+            $search, $search, $search
+        ), ARRAY_A );
+        return $row ? self::hydrate( $row ) : null;
     }
 
     public static function list( $args = [] ) {

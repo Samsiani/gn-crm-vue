@@ -256,6 +256,7 @@ class CIG_Invoice {
         // Recalculate totals
         self::recalculate_totals( $invoice_id );
 
+        self::clear_kpi_cache();
         return self::find( $invoice_id );
     }
 
@@ -288,6 +289,7 @@ class CIG_Invoice {
         // Recalculate totals
         self::recalculate_totals( $id );
 
+        self::clear_kpi_cache();
         return self::find( $id );
     }
 
@@ -296,7 +298,9 @@ class CIG_Invoice {
      */
     public static function delete( $id ) {
         global $wpdb;
-        return $wpdb->delete( self::table(), [ 'id' => $id ] );
+        $result = $wpdb->delete( self::table(), [ 'id' => $id ] );
+        self::clear_kpi_cache();
+        return $result;
     }
 
     /**
@@ -364,6 +368,10 @@ class CIG_Invoice {
      * Returns totals, monthly trend, expiring reservations, and top products.
      */
     public static function get_dashboard_kpi( $args = [] ) {
+        $cache_key = 'cig_kpi_dash_' . md5( wp_json_encode( $args ) );
+        $cached    = get_transient( $cache_key );
+        if ( $cached !== false ) return $cached;
+
         global $wpdb;
 
         $table    = self::table();
@@ -552,7 +560,7 @@ class CIG_Invoice {
             $six_ago
         ), ARRAY_A );
 
-        return [
+        $data = [
             'totalInvoices'        => (int) $kpi_row['total_invoices'],
             'grossRevenue'         => (float) $kpi_row['gross_revenue'],
             'totalPaid'            => $total_paid,
@@ -567,6 +575,8 @@ class CIG_Invoice {
                 'revenue'   => (float) $p['revenue'],
             ], $top_products ),
         ];
+        set_transient( $cache_key, $data, 5 * MINUTE_IN_SECONDS );
+        return $data;
     }
 
     /**
@@ -577,6 +587,10 @@ class CIG_Invoice {
      * @return array overview, products, customers
      */
     public static function get_statistics_kpi( $args = [] ) {
+        $cache_key = 'cig_kpi_stat_' . md5( wp_json_encode( $args ) );
+        $cached    = get_transient( $cache_key );
+        if ( $cached !== false ) return $cached;
+
         global $wpdb;
 
         $table   = self::table();
@@ -774,7 +788,7 @@ class CIG_Invoice {
             'outstanding'  => (float) $r['outstanding'],
         ], $cust_rows );
 
-        return [
+        $data = [
             'overview' => [
                 'invoiceCount'          => (int)   ( $ov_row['invoice_count'] ?? 0 ),
                 'totalRevenue'          => (float) ( $ov_row['total_revenue'] ?? 0 ),
@@ -790,6 +804,20 @@ class CIG_Invoice {
             'products'  => $products,
             'customers' => $customers,
         ];
+        set_transient( $cache_key, $data, 5 * MINUTE_IN_SECONDS );
+        return $data;
+    }
+
+    /**
+     * Delete all KPI transients so the next request re-runs the queries.
+     */
+    private static function clear_kpi_cache() {
+        global $wpdb;
+        $wpdb->query(
+            "DELETE FROM {$wpdb->options}
+             WHERE option_name LIKE '_transient_cig_kpi_%'
+                OR option_name LIKE '_transient_timeout_cig_kpi_%'"
+        );
     }
 
     // ── Private helpers ──

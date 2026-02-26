@@ -91,12 +91,14 @@ class CIG_Product {
 
         $products = wc_get_products( $wc_args );
 
-        // Get total count
-        $count_args = $wc_args;
-        $count_args['limit']  = -1;
-        $count_args['return'] = 'ids';
-        $count_args['page']   = 1;
-        $total = count( wc_get_products( $count_args ) );
+        // Get total count via SQL COUNT (avoids loading all IDs into PHP memory)
+        $count_args            = $wc_args;
+        $count_args['paginate'] = true;
+        $count_args['limit']   = 1;
+        $count_args['page']    = 1;
+        unset( $count_args['return'] );
+        $count_result = wc_get_products( $count_args );
+        $total        = $count_result->total;
 
         $per_page = max( 1, (int) $args['per_page'] );
 
