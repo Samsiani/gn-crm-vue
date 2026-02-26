@@ -443,8 +443,8 @@ class CIG_Invoice {
             "SELECT
                 i.invoice_number, i.created_at,
                 it.product_id, it.reservation_days,
-                COALESCE(NULLIF(it.name, ''), p.name, '')  as product_name,
-                COALESCE(NULLIF(it.sku,  ''), p.sku,  '')  as sku,
+                COALESCE(NULLIF(it.name, ''), NULLIF(p.name, ''), NULLIF(p.name_ka, ''), '') as product_name,
+                COALESCE(NULLIF(it.sku,  ''), NULLIF(p.sku,  ''), '')                      as sku,
                 c.name as customer_name
              FROM {$table} i
              JOIN {$items_t} it ON it.invoice_id = i.id AND it.item_status = 'reserved' AND it.reservation_days > 0
