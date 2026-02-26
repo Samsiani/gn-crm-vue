@@ -57,13 +57,23 @@ class CIG_Updater {
      * Attach all WordPress update-system hooks.
      */
     private function register_hooks() {
+        // Inject update data both when WP builds the transient (force-check)
+        // AND when it reads it from cache (normal page loads).
+        // Without the second hook, updates only appear after "Check Again" overwrites the cache.
         add_filter( 'pre_set_site_transient_update_plugins', [ $this, 'check_for_update' ] );
-        add_filter( 'plugins_api',                          [ $this, 'plugin_info'       ], 10, 3 );
-        add_action( 'upgrader_process_complete',            [ $this, 'purge_transient'   ], 10, 2 );
+        add_filter( 'site_transient_update_plugins',         [ $this, 'check_for_update' ] );
+
+        add_filter( 'plugins_api',               [ $this, 'plugin_info'    ], 10, 3 );
+        add_action( 'upgrader_process_complete', [ $this, 'purge_transient' ], 10, 2 );
 
         // Clear our GitHub cache whenever WordPress forces a fresh update check
         // (e.g. user clicks "Check Again" in Dashboard → Updates).
         add_action( 'delete_site_transient_update_plugins', [ $this, 'purge_github_cache' ] );
+
+        // Rename the extracted zip folder to match our installed plugin folder name.
+        // Prevents duplicate plugin entries when the zip's internal folder differs
+        // from the folder the plugin is currently installed in on the server.
+        add_filter( 'upgrader_source_selection', [ $this, 'fix_source_dir' ], 10, 4 );
     }
 
     /**
@@ -135,14 +145,18 @@ class CIG_Updater {
     }
 
     /**
-     * `pre_set_site_transient_update_plugins` callback.
+     * `pre_set_site_transient_update_plugins` and `site_transient_update_plugins` callback.
      * Injects our update info when a newer version is available on GitHub.
+     *
+     * Hooked into both the SET and the READ of the update transient so the update
+     * notification appears regardless of whether WordPress is doing a fresh check
+     * or serving from its own cache.
      *
      * @param  object $transient  WordPress update transient.
      * @return object
      */
     public function check_for_update( $transient ) {
-        if ( empty( $transient->checked ) ) {
+        if ( ! is_object( $transient ) || empty( $transient->checked ) ) {
             return $transient;
         }
 
@@ -152,16 +166,16 @@ class CIG_Updater {
         }
 
         if ( version_compare( $release['version'], $this->current_version, '>' ) ) {
-            $update              = new stdClass();
-            $update->id          = $this->github_repo;
-            $update->slug        = dirname( $this->plugin_slug );   // "gn-crm-vue"
-            $update->plugin      = $this->plugin_slug;              // "gn-crm-vue/cig-headless.php"
-            $update->new_version = $release['version'];
-            $update->url         = 'https://github.com/' . $this->github_owner . '/' . $this->github_repo;
-            $update->package     = $release['package_url'];
-            $update->icons       = [];
-            $update->banners     = [];
-            $update->tested      = get_bloginfo( 'version' );
+            $update               = new stdClass();
+            $update->id           = $this->github_repo;
+            $update->slug         = dirname( $this->plugin_slug );
+            $update->plugin       = $this->plugin_slug;
+            $update->new_version  = $release['version'];
+            $update->url          = 'https://github.com/' . $this->github_owner . '/' . $this->github_repo;
+            $update->package      = $release['package_url'];
+            $update->icons        = [];
+            $update->banners      = [];
+            $update->tested       = get_bloginfo( 'version' );
             $update->requires_php = '7.4';
             $update->compatibility = new stdClass();
 
@@ -214,6 +228,64 @@ class CIG_Updater {
         ];
 
         return $info;
+    }
+
+    /**
+     * `upgrader_source_selection` filter.
+     *
+     * The zip's internal folder is always 'gn-crm-vue' but the plugin may be installed
+     * under a different folder name on the server (e.g. 'gn-crm-vue-main').
+     * WordPress uses the extracted folder name as the install destination, which would
+     * create a duplicate plugin instead of updating the existing one.
+     *
+     * This renames the temp extracted folder to match the plugin's current installed
+     * folder name BEFORE WordPress copies it — so it always replaces the right directory.
+     * Works for both auto-updates and manual zip uploads.
+     *
+     * @param  string      $source        Path to extracted source folder (may end with /).
+     * @param  string      $remote_source Path to the temp working directory.
+     * @param  WP_Upgrader $upgrader
+     * @param  array       $hook_extra
+     * @return string  Corrected source path.
+     */
+    public function fix_source_dir( $source, $remote_source, $upgrader, $hook_extra = [] ) {
+        global $wp_filesystem;
+        if ( ! $wp_filesystem ) {
+            return $source;
+        }
+
+        // Detect whether this zip belongs to our plugin.
+        $is_our_plugin = false;
+
+        if ( ! empty( $hook_extra['plugin'] ) && $hook_extra['plugin'] === $this->plugin_slug ) {
+            // Auto-update path: WordPress already knows which plugin is being updated.
+            $is_our_plugin = true;
+        } else {
+            // Manual upload path: check for our main file inside the extracted source.
+            $main_file = trailingslashit( $source ) . 'cig-headless.php';
+            if ( $wp_filesystem->exists( $main_file ) ) {
+                $is_our_plugin = true;
+            }
+        }
+
+        if ( ! $is_our_plugin ) {
+            return $source;
+        }
+
+        // The folder name the plugin is currently installed under on this server.
+        $installed_folder = dirname( $this->plugin_slug );              // e.g. 'gn-crm-vue-main'
+        $correct_source   = trailingslashit( $remote_source ) . $installed_folder . '/';
+
+        if ( trailingslashit( $source ) === $correct_source ) {
+            return $source; // Already matches — nothing to do.
+        }
+
+        // Rename the extracted temp folder so WordPress installs into the right directory.
+        if ( $wp_filesystem->move( untrailingslashit( $source ), untrailingslashit( $correct_source ) ) ) {
+            return $correct_source;
+        }
+
+        return $source;
     }
 
     /**
