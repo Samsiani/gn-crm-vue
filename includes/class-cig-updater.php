@@ -60,6 +60,10 @@ class CIG_Updater {
         add_filter( 'pre_set_site_transient_update_plugins', [ $this, 'check_for_update' ] );
         add_filter( 'plugins_api',                          [ $this, 'plugin_info'       ], 10, 3 );
         add_action( 'upgrader_process_complete',            [ $this, 'purge_transient'   ], 10, 2 );
+
+        // Clear our GitHub cache whenever WordPress forces a fresh update check
+        // (e.g. user clicks "Check Again" in Dashboard → Updates).
+        add_action( 'delete_site_transient_update_plugins', [ $this, 'purge_github_cache' ] );
     }
 
     /**
@@ -210,6 +214,15 @@ class CIG_Updater {
         ];
 
         return $info;
+    }
+
+    /**
+     * `delete_site_transient_update_plugins` callback.
+     * Fires when WordPress deletes the update_plugins transient (i.e. "Check Again").
+     * Clears our GitHub cache so the next check always hits the API fresh.
+     */
+    public function purge_github_cache() {
+        delete_transient( $this->transient_key );
     }
 
     /**
