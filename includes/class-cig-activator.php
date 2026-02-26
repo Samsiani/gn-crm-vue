@@ -360,6 +360,12 @@ class CIG_Activator {
             // Users
             [ 'table' => $prefix . 'users',          'name' => 'idx_role',              'sql' => "ADD KEY idx_role (role)" ],
             [ 'table' => $prefix . 'users',          'name' => 'idx_is_active_role',    'sql' => "ADD KEY idx_is_active_role (is_active, role)" ],
+            // Consultant/user panel — author_id + status + created_at
+            [ 'table' => $prefix . 'invoices',       'name' => 'idx_author_status_created',   'sql' => "ADD KEY idx_author_status_created (author_id, status, created_at)" ],
+            // Customer panel invoice history — customer_id + status + created_at
+            [ 'table' => $prefix . 'invoices',       'name' => 'idx_customer_status_created', 'sql' => "ADD KEY idx_customer_status_created (customer_id, status, created_at)" ],
+            // Lifecycle filter + date range — status + lifecycle_status + created_at
+            [ 'table' => $prefix . 'invoices',       'name' => 'idx_status_lc_created',       'sql' => "ADD KEY idx_status_lc_created (status, lifecycle_status, created_at)" ],
         ];
 
         foreach ( $indexes as $idx ) {

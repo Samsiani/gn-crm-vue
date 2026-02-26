@@ -49,12 +49,14 @@ class CIG_Invoice {
             'completion'     => '',
             'author_id'      => null,
             'customer_id'    => null,
+            'lean'           => false,
             'sort'           => 'created_at',
             'order'          => 'DESC',
             'page'           => 1,
             'per_page'       => 25,
         ];
         $args = wp_parse_args( $args, $defaults );
+        $lean = ! empty( $args['lean'] );
 
         $table = self::table();
         $items_table = self::items_table();
@@ -179,10 +181,11 @@ class CIG_Invoice {
         $rows = $wpdb->get_results( $wpdb->prepare( $query, ...$query_params ), ARRAY_A );
 
         // Batch-fetch items and payments for all invoices in 2 queries (fixes N+1)
+        // Skipped in lean mode — items and payments returned as empty arrays.
         $items_by_id    = [];
         $payments_by_id = [];
 
-        if ( ! empty( $rows ) ) {
+        if ( ! $lean && ! empty( $rows ) ) {
             $invoice_ids    = array_column( $rows, 'id' );
             $ids_sql        = implode( ',', array_map( 'intval', $invoice_ids ) );
 
@@ -208,8 +211,8 @@ class CIG_Invoice {
         foreach ( $rows as $row ) {
             $invoices[] = self::hydrate(
                 $row,
-                $items_by_id[ (int) $row['id'] ] ?? [],
-                $payments_by_id[ (int) $row['id'] ] ?? []
+                $lean ? [] : ( $items_by_id[ (int) $row['id'] ] ?? [] ),
+                $lean ? [] : ( $payments_by_id[ (int) $row['id'] ] ?? [] )
             );
         }
 
@@ -392,6 +395,11 @@ class CIG_Invoice {
         if ( $from ) $pay_date .= $wpdb->prepare( ' AND p.payment_date >= %s', $from );
         if ( $to )   $pay_date .= $wpdb->prepare( ' AND p.payment_date <= %s', $to );
 
+        // Optional author_id filter (for consultant dashboard)
+        $author_id        = isset( $args['author_id'] ) ? (int) $args['author_id'] : null;
+        $author_cond      = $author_id ? $wpdb->prepare( ' AND i.author_id = %d', $author_id ) : '';
+        $author_cond_bare = $author_id ? $wpdb->prepare( ' AND author_id = %d', $author_id ) : '';
+
         // ── 1. Core invoice KPIs (standard invoices, date-filtered) ──────────
         $kpi_row = $wpdb->get_row(
             "SELECT
@@ -402,7 +410,7 @@ class CIG_Invoice {
                     THEN GREATEST(0, i.total_amount - i.paid_amount) ELSE 0 END
                 ), 0) as outstanding_balance
              FROM {$table} i
-             WHERE i.status = 'standard' {$inv_date}",
+             WHERE i.status = 'standard' {$inv_date}{$author_cond}",
             ARRAY_A
         );
 
@@ -410,7 +418,7 @@ class CIG_Invoice {
         $pending_sql = "SELECT COUNT(DISTINCT i.id) FROM {$table} i
              WHERE i.status = 'standard' AND i.lifecycle_status = 'active'
              AND EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')
-             {$inv_date}";
+             {$inv_date}{$author_cond}";
         $pending = (int) $wpdb->get_var( $pending_sql );
 
         // ── 3. Payment method totals (filtered by payment_date) ──────────────
@@ -418,7 +426,7 @@ class CIG_Invoice {
             "SELECT p.method, SUM(p.amount) as total
              FROM {$pays_t} p
              JOIN {$table} i ON i.id = p.invoice_id
-             WHERE i.status = 'standard' {$pay_date}
+             WHERE i.status = 'standard' {$pay_date}{$author_cond}
              GROUP BY p.method",
             ARRAY_A
         );
@@ -447,7 +455,7 @@ class CIG_Invoice {
                 COALESCE(SUM(CASE WHEN lifecycle_status IN ('sold','completed') THEN 1 ELSE 0 END), 0) AS completed,
                 COALESCE(SUM(GREATEST(0, total_amount - paid_amount)), 0) AS outstanding
              FROM {$table}
-             WHERE status = 'standard' AND created_at >= %s AND created_at <= %s
+             WHERE status = 'standard' AND created_at >= %s AND created_at <= %s{$author_cond_bare}
              GROUP BY DATE_FORMAT(created_at, '%%Y-%%m')",
             $six_month_start, $today
         ), ARRAY_A );
@@ -464,7 +472,7 @@ class CIG_Invoice {
              FROM {$pays_t} p
              JOIN {$table} i ON i.id = p.invoice_id
              WHERE i.status = 'standard' AND p.method != 'consignment'
-               AND p.payment_date >= %s AND p.payment_date <= %s
+               AND p.payment_date >= %s AND p.payment_date <= %s{$author_cond}
              GROUP BY DATE_FORMAT(p.payment_date, '%%Y-%%m')",
             $six_month_start, $today
         ), ARRAY_A );
@@ -502,7 +510,7 @@ class CIG_Invoice {
         $pmeta  = $wpdb->postmeta;
         $res_rows = $wpdb->get_results(
             "SELECT
-                i.invoice_number, i.created_at,
+                i.id as invoice_id, i.invoice_number, i.created_at,
                 it.product_id, it.reservation_days,
                 COALESCE(
                     NULLIF(it.name,         ''),
@@ -526,7 +534,7 @@ class CIG_Invoice {
              LEFT JOIN {$pmeta}   pm_sku ON pm_sku.post_id   = it.product_id
                                         AND pm_sku.meta_key   = '_sku'
              LEFT JOIN {$prod_t}  cp     ON cp.id        = it.product_id
-             WHERE i.lifecycle_status = 'active'
+             WHERE i.lifecycle_status = 'active'{$author_cond}
              ORDER BY i.created_at ASC
              LIMIT 50",
             ARRAY_A
@@ -536,6 +544,7 @@ class CIG_Invoice {
             $days_elapsed   = (int) floor( ( time() - strtotime( $r['created_at'] ) ) / DAY_IN_SECONDS );
             $days_remaining = max( 0, (int) $r['reservation_days'] - $days_elapsed );
             $expiring[] = [
+                'invoiceId'     => (int) $r['invoice_id'],
                 'invoiceNumber' => $r['invoice_number'],
                 'productName'   => $r['product_name'],
                 'sku'           => $r['sku'],
@@ -553,7 +562,7 @@ class CIG_Invoice {
             "SELECT it.product_id, it.name, SUM(it.qty * it.price) as revenue
              FROM {$items_t} it
              JOIN {$table} i ON i.id = it.invoice_id
-             WHERE i.status = 'standard' AND i.created_at >= %s AND it.item_status != 'canceled'
+             WHERE i.status = 'standard' AND i.created_at >= %s AND it.item_status != 'canceled'{$author_cond}
              GROUP BY it.product_id, it.name
              ORDER BY revenue DESC
              LIMIT 5",

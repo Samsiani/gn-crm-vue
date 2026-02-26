@@ -14,7 +14,7 @@ abstract class CIG_REST_Controller {
     protected function get_pagination_params( $request ) {
         return [
             'page'     => max( 1, (int) $request->get_param( 'page' ) ?: 1 ),
-            'per_page' => min( 9999, max( 1, (int) $request->get_param( 'per_page' ) ?: 25 ) ),
+            'per_page' => min( 500, max( 1, (int) $request->get_param( 'per_page' ) ?: 25 ) ),
         ];
     }
 

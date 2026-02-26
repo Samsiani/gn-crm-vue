@@ -91,6 +91,14 @@ class CIG_Product {
 
         $products = wc_get_products( $wc_args );
 
+        // Batch-prime WordPress meta and term caches — converts 4N queries into 2 queries.
+        // Each hydrate_wc() call hits the in-process cache instead of the DB.
+        if ( ! empty( $products ) ) {
+            $ids = array_map( fn( $p ) => $p->get_id(), $products );
+            update_meta_cache( 'post', $ids );
+            update_object_term_cache( $ids, 'product' );
+        }
+
         // Get total count via SQL COUNT (avoids loading all IDs into PHP memory)
         $count_args            = $wc_args;
         $count_args['paginate'] = true;

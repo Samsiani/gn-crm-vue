@@ -63,6 +63,7 @@ class CIG_Invoices_Controller extends CIG_REST_Controller {
             'date_to'        => sanitize_text_field( $request->get_param( 'date_to' ) ?: '' ),
             'customer_id'    => $request->get_param( 'customer_id' ) ? (int) $request->get_param( 'customer_id' ) : null,
             'completion'     => sanitize_text_field( $request->get_param( 'completion' ) ?: '' ),
+            'lean'           => (bool) $request->get_param( 'lean' ),
         ] );
 
         // Sort field: convert camelCase from frontend
