@@ -1,0 +1,72 @@
+name: Release Plugin
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'cig-headless.php'
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract plugin version
+        id: version
+        run: |
+          VERSION=$(grep -oP "define\(\s*'CIG_VERSION',\s*'\K[^']+" cig-headless.php)
+          if [ -z "$VERSION" ]; then echo "::error::Could not extract CIG_VERSION"; exit 1; fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}"    >> "$GITHUB_OUTPUT"
+
+      - name: Check if tag already exists
+        id: tag_check
+        run: |
+          if git ls-remote --tags origin "refs/tags/v${{ steps.version.outputs.version }}" | grep -q "refs/tags"; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build plugin zip
+        if: steps.tag_check.outputs.exists == 'false'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ZIP_NAME="gn-crm-vue-${VERSION}.zip"
+          STAGING="/tmp/zip-staging/gn-crm-vue"
+          mkdir -p "$STAGING"
+          rsync -av --exclude='.git' --exclude='.github' --exclude='.DS_Store' --exclude='*.log' --exclude='*.map' ./ "$STAGING/"
+          test -f "$STAGING/cig-headless.php"          || { echo "::error::cig-headless.php missing"; exit 1; }
+          test -f "$STAGING/dist/.vite/manifest.json"  || { echo "::error::manifest.json missing";    exit 1; }
+          test -d "$STAGING/vendor"                    || { echo "::error::vendor/ missing";           exit 1; }
+          cd /tmp/zip-staging && zip -r "$GITHUB_WORKSPACE/$ZIP_NAME" gn-crm-vue/
+          echo "zip_name=${ZIP_NAME}"                      >> "$GITHUB_ENV"
+          echo "zip_path=${GITHUB_WORKSPACE}/${ZIP_NAME}"  >> "$GITHUB_ENV"
+
+      - name: Create and push Git tag
+        if: steps.tag_check.outputs.exists == 'false'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Create GitHub Release
+        if: steps.tag_check.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name:               ${{ steps.version.outputs.tag }}
+          name:                   "Release ${{ steps.version.outputs.tag }}"
+          draft:                  false
+          prerelease:             false
+          generate_release_notes: true
+          files:                  ${{ env.zip_path }}
