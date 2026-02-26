@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-The codebase is well-structured with good patterns already in place (batch-fetched invoice items/payments, KPI transient caching, proper pagination). This audit identifies **32 improvement opportunities** across 6 categories, prioritised by impact.
+The codebase is well-structured with good patterns already in place (batch-fetched invoice items/payments, KPI transient caching, proper pagination). This audit identifies **32 improvement opportunities** across 7 categories, prioritized by impact.
 
 ### Scorecard
 
