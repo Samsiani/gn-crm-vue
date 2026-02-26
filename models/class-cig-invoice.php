@@ -60,7 +60,6 @@ class CIG_Invoice {
         $items_table = self::items_table();
         $payments_table = self::payments_table();
         $where = [ '1=1' ];
-        $joins = [];
         $params = [];
 
         // Status filter (standard/fictive)

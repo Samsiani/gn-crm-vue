@@ -160,7 +160,7 @@ class CIG_User {
         }
 
         // Map WP role → CIG role
-        $role = 'sales'; // default
+        $role = 'none'; // default — unknown WP roles get no CRM access; admin assigns role manually
         $wp_roles = $wp_user->roles;
         if ( in_array( 'administrator', $wp_roles, true ) ) {
             $role = 'admin';

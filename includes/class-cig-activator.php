@@ -7,7 +7,7 @@ class CIG_Activator {
     public static function activate() {
         self::create_tables();
         self::seed_company();
-        update_option( 'cig_db_version', CIG_VERSION );
+        update_option( 'cig_db_version', CIG_DB_VERSION );
     }
 
     public static function create_tables() {

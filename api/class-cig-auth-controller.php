@@ -70,6 +70,14 @@ class CIG_Auth_Controller extends CIG_REST_Controller {
             }
         }
 
+        if ( ! $cig_user['isActive'] ) {
+            return new WP_Error(
+                'cig_account_disabled',
+                'Your account has been disabled.',
+                [ 'status' => 403 ]
+            );
+        }
+
         return rest_ensure_response( [
             'user' => $cig_user,
         ] );
@@ -110,6 +118,14 @@ class CIG_Auth_Controller extends CIG_REST_Controller {
                 if ( $cig_user && $cig_user['wpUserId'] ) {
                     $wp_user_obj = get_user_by( 'ID', $cig_user['wpUserId'] );
                     if ( $wp_user_obj && wp_check_password( $password, $wp_user_obj->user_pass, $wp_user_obj->ID ) ) {
+                        if ( ! $cig_user['isActive'] ) {
+                            return new WP_Error(
+                                'cig_account_disabled',
+                                'Your account has been disabled.',
+                                [ 'status' => 403 ]
+                            );
+                        }
+
                         // Set WordPress session cookies so cookie auth works going forward
                         wp_set_current_user( $wp_user_obj->ID );
                         wp_set_auth_cookie( $wp_user_obj->ID, true );
@@ -144,6 +160,14 @@ class CIG_Auth_Controller extends CIG_REST_Controller {
                     [ 'status' => 500 ]
                 );
             }
+        }
+
+        if ( ! $cig_user['isActive'] ) {
+            return new WP_Error(
+                'cig_account_disabled',
+                'Your account has been disabled.',
+                [ 'status' => 403 ]
+            );
         }
 
         // Set WordPress session cookies so cookie auth works going forward

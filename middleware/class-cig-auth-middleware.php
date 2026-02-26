@@ -117,6 +117,9 @@ class CIG_Auth_Middleware {
             if ( ! is_wp_error( $payload ) ) {
                 $user = CIG_User::find( $payload['sub'] );
                 if ( $user ) {
+                    if ( ! $user['isActive'] ) {
+                        return new WP_Error( 'cig_account_disabled', 'Your account has been disabled.', [ 'status' => 403 ] );
+                    }
                     return $user;
                 }
             }
@@ -127,6 +130,9 @@ class CIG_Auth_Middleware {
         if ( $wp_user_id ) {
             $cig_user = CIG_User::find_by_wp_user( $wp_user_id );
             if ( $cig_user ) {
+                if ( ! $cig_user['isActive'] ) {
+                    return new WP_Error( 'cig_account_disabled', 'Your account has been disabled.', [ 'status' => 403 ] );
+                }
                 return $cig_user;
             }
 
@@ -135,6 +141,9 @@ class CIG_Auth_Middleware {
             if ( $wp_user ) {
                 $cig_user = CIG_User::create_from_wp_user( $wp_user );
                 if ( $cig_user ) {
+                    if ( ! $cig_user['isActive'] ) {
+                        return new WP_Error( 'cig_account_disabled', 'Your account has been disabled.', [ 'status' => 403 ] );
+                    }
                     return $cig_user;
                 }
             }
