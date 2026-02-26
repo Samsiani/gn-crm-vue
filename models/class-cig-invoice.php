@@ -281,13 +281,13 @@ class CIG_Invoice {
         $starting = $company ? (int) $company['startingInvoiceNumber'] : 1001;
 
         $last_number = $wpdb->get_var(
-            "SELECT MAX(CAST(REPLACE(invoice_number, '{$prefix}-', '') AS UNSIGNED))
+            "SELECT MAX(CAST(REPLACE(invoice_number, '{$prefix}', '') AS UNSIGNED))
              FROM " . self::table() . "
-             WHERE invoice_number LIKE '{$prefix}-%'"
+             WHERE invoice_number LIKE '{$prefix}%'"
         );
 
         $next = max( $starting, ( (int) $last_number ) + 1 );
-        return $prefix . '-' . $next;
+        return $prefix . $next;
     }
 
     /**
