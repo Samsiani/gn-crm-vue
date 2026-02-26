@@ -1,4 +1,7 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
 /**
  * Invoices REST controller — full CRUD with lifecycle filtering and role-aware access.
  */

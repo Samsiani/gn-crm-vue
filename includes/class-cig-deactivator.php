@@ -1,4 +1,7 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
 /**
  * Plugin deactivator — optional cleanup on deactivation.
  * Does NOT drop tables (use WP-CLI rollback for that).

@@ -1,4 +1,7 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
 /**
  * Other Deliveries REST controller — tracks delivery records for "Other" payment balance.
  */

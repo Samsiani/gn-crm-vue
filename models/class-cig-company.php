@@ -1,8 +1,13 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
 /**
  * Company model — single-row configuration table.
  */
 class CIG_Company {
+
+    private static $cache = null;
 
     private static function table() {
         global $wpdb;
@@ -10,13 +15,21 @@ class CIG_Company {
     }
 
     /**
-     * Get the company config (always a single row).
+     * Get the company config (always a single row). Cached per-request.
      */
     public static function get() {
+        if ( self::$cache !== null ) {
+            return self::$cache === false ? null : self::$cache;
+        }
+
         global $wpdb;
         $row = $wpdb->get_row( "SELECT * FROM " . self::table() . " LIMIT 1", ARRAY_A );
-        if ( ! $row ) return null;
-        return self::hydrate( $row );
+        if ( ! $row ) {
+            self::$cache = false;
+            return null;
+        }
+        self::$cache = self::hydrate( $row );
+        return self::$cache;
     }
 
     /**
@@ -34,6 +47,7 @@ class CIG_Company {
             $wpdb->insert( $table, $fields );
         }
 
+        self::$cache = null; // Bust cache on update
         return self::get();
     }
 
@@ -92,6 +106,26 @@ class CIG_Company {
                 }
             }
         }
+
+        // Sanitize text fields
+        $text_fields = [
+            'name', 'name_ka', 'tax_id', 'address', 'phone',
+            'website', 'bank_name_1', 'iban_1', 'bank_name_2', 'iban_2',
+            'director_name', 'invoice_prefix',
+        ];
+        foreach ( $text_fields as $tf ) {
+            if ( isset( $fields[ $tf ] ) ) {
+                $fields[ $tf ] = sanitize_text_field( $fields[ $tf ] );
+            }
+        }
+        if ( isset( $fields['email'] ) )         $fields['email']         = sanitize_email( $fields['email'] );
+        if ( isset( $fields['logo_url'] ) )      $fields['logo_url']      = esc_url_raw( $fields['logo_url'] );
+        if ( isset( $fields['signature_url'] ) ) $fields['signature_url'] = esc_url_raw( $fields['signature_url'] );
+
+        // Cast numeric fields
+        if ( isset( $fields['reservation_days'] ) )        $fields['reservation_days']        = max( 1, (int) $fields['reservation_days'] );
+        if ( isset( $fields['starting_invoice_number'] ) ) $fields['starting_invoice_number'] = max( 1, (int) $fields['starting_invoice_number'] );
+        if ( isset( $fields['hide_wp_admin_bar'] ) )       $fields['hide_wp_admin_bar']       = $fields['hide_wp_admin_bar'] ? 1 : 0;
 
         return $fields;
     }

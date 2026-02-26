@@ -1,4 +1,7 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
 /**
  * Hooks into the WordPress update system to check GitHub Releases for plugin updates.
  *

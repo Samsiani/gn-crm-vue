@@ -1,4 +1,7 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
 /**
  * Role-Based Access Control permission callbacks for REST API endpoints.
  */

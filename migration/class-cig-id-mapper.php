@@ -1,4 +1,7 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
 /**
  * ID Mapper — manages cross-reference between legacy and new IDs.
  */

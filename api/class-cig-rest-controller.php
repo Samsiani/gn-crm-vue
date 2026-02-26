@@ -1,4 +1,7 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
 /**
  * Base REST controller — shared helpers for pagination, sorting, response formatting.
  */

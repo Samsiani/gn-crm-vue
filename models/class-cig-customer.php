@@ -1,4 +1,7 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
 /**
  * Customer model — CRUD + computed stats (totalSpent, invoiceCount, outstanding).
  */
@@ -202,6 +205,17 @@ class CIG_Customer {
                     break;
                 }
             }
+        }
+
+        // Sanitize text fields
+        $text_fields = [ 'name', 'name_en', 'tax_id', 'address', 'phone' ];
+        foreach ( $text_fields as $tf ) {
+            if ( isset( $fields[ $tf ] ) ) {
+                $fields[ $tf ] = sanitize_text_field( $fields[ $tf ] );
+            }
+        }
+        if ( isset( $fields['email'] ) ) {
+            $fields['email'] = sanitize_email( $fields['email'] );
         }
 
         return $fields;
