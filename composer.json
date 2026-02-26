@@ -1,0 +1,19 @@
+{
+    "name": "gn-industrial/cig-headless",
+    "description": "CIG Headless REST API for Vue.js SPA",
+    "type": "wordpress-plugin",
+    "require": {
+        "php": ">=7.4",
+        "firebase/php-jwt": "^6.0"
+    },
+    "autoload": {
+        "classmap": [
+            "includes/",
+            "api/",
+            "models/",
+            "middleware/",
+            "migration/",
+            "cli/"
+        ]
+    }
+}
