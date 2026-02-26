@@ -438,18 +438,38 @@ class CIG_Invoice {
         }
 
         // ── 5. Expiring reservations ─────────────────────────────────────────
-        $prod_t   = $wpdb->prefix . 'cig_products';
+        // product_id in invoice_items is a WooCommerce post ID when WC is active,
+        // so we join BOTH wp_posts (WC name) + wp_postmeta (WC SKU) AND wp_cig_products
+        // as a fallback, then COALESCE across all sources.
+        $prod_t = $wpdb->prefix . 'cig_products';
+        $posts  = $wpdb->posts;
+        $pmeta  = $wpdb->postmeta;
         $res_rows = $wpdb->get_results(
             "SELECT
                 i.invoice_number, i.created_at,
                 it.product_id, it.reservation_days,
-                COALESCE(NULLIF(it.name, ''), NULLIF(p.name, ''), NULLIF(p.name_ka, ''), '') as product_name,
-                COALESCE(NULLIF(it.sku,  ''), NULLIF(p.sku,  ''), '')                      as sku,
+                COALESCE(
+                    NULLIF(it.name,         ''),
+                    NULLIF(wc.post_title,   ''),
+                    NULLIF(cp.name,         ''),
+                    NULLIF(cp.name_ka,      ''),
+                    ''
+                ) as product_name,
+                COALESCE(
+                    NULLIF(it.sku,          ''),
+                    NULLIF(pm_sku.meta_value,''),
+                    NULLIF(cp.sku,          ''),
+                    ''
+                ) as sku,
                 c.name as customer_name
              FROM {$table} i
              JOIN {$items_t} it ON it.invoice_id = i.id AND it.item_status = 'reserved' AND it.reservation_days > 0
-             LEFT JOIN {$cust_t} c ON c.id = i.customer_id
-             LEFT JOIN {$prod_t} p ON p.id = it.product_id
+             LEFT JOIN {$cust_t}  c      ON c.id        = i.customer_id
+             LEFT JOIN {$posts}   wc     ON wc.ID       = it.product_id
+                                        AND wc.post_type IN ('product','product_variation')
+             LEFT JOIN {$pmeta}   pm_sku ON pm_sku.post_id   = it.product_id
+                                        AND pm_sku.meta_key   = '_sku'
+             LEFT JOIN {$prod_t}  cp     ON cp.id        = it.product_id
              WHERE i.lifecycle_status = 'active'
              ORDER BY i.created_at ASC
              LIMIT 50",
