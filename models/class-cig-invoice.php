@@ -61,6 +61,7 @@ class CIG_Invoice {
         $table = self::table();
         $items_table = self::items_table();
         $payments_table = self::payments_table();
+        $customers_table = $wpdb->prefix . 'cig_customers';
         $where = [ '1=1' ];
         $params = [];
 
@@ -146,10 +147,12 @@ class CIG_Invoice {
             $where[] = '(i.is_rs_uploaded = 0 OR i.is_credit_checked = 0 OR i.is_receipt_checked = 0 OR i.is_corrected = 0)';
         }
 
-        // Search (invoice number, buyer name, buyer tax ID)
+        // Search (invoice number, buyer name/tax, customer name in both languages)
         if ( ! empty( $args['search'] ) ) {
             $search = '%' . $wpdb->esc_like( $args['search'] ) . '%';
-            $where[] = '(i.invoice_number LIKE %s OR i.buyer_name LIKE %s OR i.buyer_tax_id LIKE %s)';
+            $where[] = '(i.invoice_number LIKE %s OR i.buyer_name LIKE %s OR i.buyer_tax_id LIKE %s OR c.name LIKE %s OR c.name_en LIKE %s)';
+            $params[] = $search;
+            $params[] = $search;
             $params[] = $search;
             $params[] = $search;
             $params[] = $search;
@@ -165,8 +168,10 @@ class CIG_Invoice {
         $sort = in_array( $args['sort'], $allowed_sorts, true ) ? $args['sort'] : 'created_at';
         $order = strtoupper( $args['order'] ) === 'ASC' ? 'ASC' : 'DESC';
 
+        $join_sql = "LEFT JOIN {$customers_table} c ON c.id = i.customer_id";
+
         // Count
-        $count_sql = "SELECT COUNT(*) FROM {$table} i WHERE {$where_sql}";
+        $count_sql = "SELECT COUNT(*) FROM {$table} i {$join_sql} WHERE {$where_sql}";
         if ( ! empty( $params ) ) {
             $count_sql = $wpdb->prepare( $count_sql, ...$params );
         }
@@ -176,7 +181,7 @@ class CIG_Invoice {
         $offset = ( max( 1, (int) $args['page'] ) - 1 ) * (int) $args['per_page'];
         $limit  = (int) $args['per_page'];
 
-        $query = "SELECT i.* FROM {$table} i WHERE {$where_sql} ORDER BY i.{$sort} {$order} LIMIT %d OFFSET %d";
+        $query = "SELECT i.* FROM {$table} i {$join_sql} WHERE {$where_sql} ORDER BY i.{$sort} {$order} LIMIT %d OFFSET %d";
         $query_params = array_merge( $params, [ $limit, $offset ] );
         $rows = $wpdb->get_results( $wpdb->prepare( $query, ...$query_params ), ARRAY_A );
 
