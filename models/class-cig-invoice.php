@@ -311,17 +311,25 @@ class CIG_Invoice {
      */
     public static function generate_number() {
         global $wpdb;
-        $company = CIG_Company::get();
-        $prefix = $company ? $company['invoicePrefix'] : 'GN';
-        $starting = $company ? (int) $company['startingInvoiceNumber'] : 1001;
+        $company  = CIG_Company::get();
+        $prefix   = ( $company && ! empty( $company['invoicePrefix'] ) ) ? $company['invoicePrefix'] : 'N';
+        $starting = ( $company && ! empty( $company['startingInvoiceNumber'] ) ) ? (int) $company['startingInvoiceNumber'] : 1001;
 
-        $last_number = $wpdb->get_var(
+        $last_raw = $wpdb->get_var(
             "SELECT MAX(CAST(REPLACE(invoice_number, '{$prefix}', '') AS UNSIGNED))
              FROM " . self::table() . "
              WHERE invoice_number LIKE '{$prefix}%'"
         );
 
-        $next = max( $starting, ( (int) $last_number ) + 1 );
+        // Guard against NULL, scientific notation strings, or overflowed values
+        // ctype_digit rejects 'E+18', negatives, decimals — only pure digit strings pass
+        if ( $last_raw !== null && ctype_digit( (string) $last_raw ) && strlen( $last_raw ) <= 12 ) {
+            $last_int = (int) $last_raw;
+        } else {
+            $last_int = 0;
+        }
+
+        $next = max( $starting, $last_int + 1 );
         return $prefix . $next;
     }
 
