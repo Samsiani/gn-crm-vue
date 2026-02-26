@@ -2,7 +2,7 @@
 /**
  * Plugin Name: CIG Headless API
  * Description: Custom Invoice/Group headless REST API backend for Vue.js SPA
- * Version: 4.3.6
+ * Version: 4.3.7
  * Author: GN Industrial
  * Text Domain: cig-headless
  * Requires PHP: 7.4
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'CIG_VERSION', '4.3.6' );
+define( 'CIG_VERSION', '4.3.7' );
 define( 'CIG_DB_VERSION', '1.2' );
 define( 'CIG_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'CIG_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -31,7 +31,7 @@ if ( class_exists( '\YahnisElsts\PluginUpdateChecker\v5\PucFactory' ) ) {
         __FILE__,
         'gn-crm-vue'
     );
-    $cigUpdateChecker->getVcsApi()->enableReleaseAssets( '/^gn-crm-vue.*\.zip$/' );
+    $cigUpdateChecker->getVcsApi()->enableReleaseAssets();
 }
 
 // Core includes
