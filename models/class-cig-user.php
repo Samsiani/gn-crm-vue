@@ -1,4 +1,7 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
 /**
  * CIG User model — decoupled from wp_users, has own table.
  */
@@ -253,6 +256,16 @@ class CIG_User {
                     break;
                 }
             }
+        }
+
+        // Sanitize text fields
+        if ( isset( $fields['name'] ) )    $fields['name']    = sanitize_text_field( $fields['name'] );
+        if ( isset( $fields['name_en'] ) ) $fields['name_en'] = sanitize_text_field( $fields['name_en'] );
+        if ( isset( $fields['avatar'] ) )  $fields['avatar']  = sanitize_text_field( $fields['avatar'] );
+
+        // Validate role against allowed values
+        if ( isset( $fields['role'] ) && ! in_array( $fields['role'], [ 'admin', 'manager', 'sales', 'accountant', 'none' ], true ) ) {
+            $fields['role'] = 'none';
         }
 
         if ( isset( $fields['is_active'] ) ) {

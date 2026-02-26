@@ -60,9 +60,13 @@ class CIG_Company_Controller extends CIG_REST_Controller {
                 'gif'          => 'image/gif',
                 'png'          => 'image/png',
                 'webp'         => 'image/webp',
-                'svg'          => 'image/svg+xml',
             ],
         ];
+
+        // Enforce a 2 MB upload limit
+        if ( $_FILES['file']['size'] > 2 * MB_IN_BYTES ) {
+            return new WP_Error( 'cig_file_too_large', 'File exceeds the 2 MB size limit.', [ 'status' => 400 ] );
+        }
 
         $upload = wp_handle_upload( $_FILES['file'], $overrides );
 

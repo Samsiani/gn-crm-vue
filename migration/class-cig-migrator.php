@@ -1,4 +1,7 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
 /**
  * Main migration orchestrator — reads legacy wp_postmeta data and populates custom tables.
  *

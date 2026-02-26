@@ -1,4 +1,7 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
 /**
  * Plugin loader — registers all REST API routes.
  */
@@ -10,12 +13,21 @@ class CIG_Loader {
         // Allow JWT auth via Authorization header (some hosts strip it)
         add_filter( 'rest_pre_dispatch', [ $this, 'set_jwt_user' ], 10, 3 );
 
-        // Add Cache-Control headers for read-heavy GET endpoints
+        // Add Cache-Control headers for REST API responses
         add_filter( 'rest_post_dispatch', function( $response, $server, $request ) {
-            if ( $request->get_method() !== 'GET' ) {
+            $route = $request->get_route();
+
+            // Only process CIG routes
+            if ( strpos( $route, '/cig/v1/' ) === false ) {
                 return $response;
             }
-            $route = $request->get_route();
+
+            if ( $request->get_method() !== 'GET' ) {
+                // Mutations must not be cached
+                $response->header( 'Cache-Control', 'no-store' );
+                return $response;
+            }
+
             if ( strpos( $route, '/cig/v1/kpi' ) !== false ) {
                 $response->header( 'Cache-Control', 'private, max-age=30' );
             } elseif ( preg_match( '#/cig/v1/(customers|users|company)\b#', $route ) ) {

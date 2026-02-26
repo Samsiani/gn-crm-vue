@@ -1,4 +1,7 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
 /**
  * Authentication middleware.
  * Primary: WordPress cookie auth (nonce + session).
@@ -98,7 +101,7 @@ class CIG_Auth_Middleware {
         } catch ( \Exception $e ) {
             return new WP_Error(
                 'cig_token_invalid',
-                'Invalid token: ' . $e->getMessage(),
+                'Invalid token.',
                 [ 'status' => 401 ]
             );
         }

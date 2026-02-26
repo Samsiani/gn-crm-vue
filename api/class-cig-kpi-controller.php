@@ -1,4 +1,7 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
 /**
  * KPI controller — aggregated metrics endpoints for Dashboard and Statistics.
  */

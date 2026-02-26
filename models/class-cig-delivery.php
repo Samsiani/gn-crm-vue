@@ -1,4 +1,7 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
 /**
  * Other Delivery model — tracks delivery records for "Other" payment balance.
  */
@@ -105,9 +108,9 @@ class CIG_Delivery {
     private static function extract_fields( $data ) {
         $fields = [];
 
-        if ( isset( $data['date'] ) )   $fields['delivery_date'] = $data['date'];
+        if ( isset( $data['date'] ) )   $fields['delivery_date'] = sanitize_text_field( $data['date'] );
         if ( isset( $data['amount'] ) )  $fields['amount'] = (float) $data['amount'];
-        if ( isset( $data['note'] ) )    $fields['note'] = $data['note'];
+        if ( isset( $data['note'] ) )    $fields['note'] = sanitize_textarea_field( $data['note'] );
 
         return $fields;
     }

@@ -1,4 +1,8 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
+
 /**
  * Invoice model — CRUD + business logic including getInvoiceLifecycle() port.
  */
@@ -244,10 +248,13 @@ class CIG_Invoice {
         $invoice_data = self::extract_invoice_fields( $data );
         $invoice_data['created_datetime'] = current_time( 'mysql' );
 
+        $wpdb->query( 'START TRANSACTION' );
+
         $wpdb->insert( self::table(), $invoice_data );
         $invoice_id = $wpdb->insert_id;
 
         if ( ! $invoice_id ) {
+            $wpdb->query( 'ROLLBACK' );
             return new WP_Error( 'cig_create_failed', 'Failed to create invoice.', [ 'status' => 500 ] );
         }
 
@@ -263,6 +270,8 @@ class CIG_Invoice {
 
         // Recalculate totals
         self::recalculate_totals( $invoice_id );
+
+        $wpdb->query( 'COMMIT' );
 
         self::clear_kpi_cache();
         return self::find( $invoice_id );
@@ -280,6 +289,9 @@ class CIG_Invoice {
         }
 
         $invoice_data = self::extract_invoice_fields( $data );
+
+        $wpdb->query( 'START TRANSACTION' );
+
         $wpdb->update( self::table(), $invoice_data, [ 'id' => $id ] );
 
         // Replace items if provided
@@ -296,6 +308,8 @@ class CIG_Invoice {
 
         // Recalculate totals
         self::recalculate_totals( $id );
+
+        $wpdb->query( 'COMMIT' );
 
         self::clear_kpi_cache();
         return self::find( $id );
@@ -320,11 +334,13 @@ class CIG_Invoice {
         $prefix   = ( $company && ! empty( $company['invoicePrefix'] ) ) ? $company['invoicePrefix'] : 'N';
         $starting = ( $company && ! empty( $company['startingInvoiceNumber'] ) ) ? (int) $company['startingInvoiceNumber'] : 1001;
 
-        $last_raw = $wpdb->get_var(
-            "SELECT MAX(CAST(REPLACE(invoice_number, '{$prefix}', '') AS UNSIGNED))
+        $last_raw = $wpdb->get_var( $wpdb->prepare(
+            "SELECT MAX(CAST(REPLACE(invoice_number, %s, '') AS UNSIGNED))
              FROM " . self::table() . "
-             WHERE invoice_number LIKE '{$prefix}%'"
-        );
+             WHERE invoice_number LIKE %s",
+            $prefix,
+            $wpdb->esc_like( $prefix ) . '%'
+        ) );
 
         // Guard against NULL, scientific notation strings, or overflowed values
         // ctype_digit rejects 'E+18', negatives, decimals — only pure digit strings pass
@@ -977,6 +993,39 @@ class CIG_Invoice {
             }
         }
 
+        // Sanitize text fields
+        $text_fields = [
+            'invoice_number', 'buyer_name', 'buyer_tax_id',
+            'buyer_phone', 'buyer_address', 'buyer_email',
+        ];
+        foreach ( $text_fields as $tf ) {
+            if ( isset( $fields[ $tf ] ) ) {
+                $fields[ $tf ] = sanitize_text_field( $fields[ $tf ] );
+            }
+        }
+
+        // Sanitize note fields (allow newlines)
+        $note_fields = [ 'general_note', 'consultant_note', 'accountant_note' ];
+        foreach ( $note_fields as $nf ) {
+            if ( isset( $fields[ $nf ] ) ) {
+                $fields[ $nf ] = sanitize_textarea_field( $fields[ $nf ] );
+            }
+        }
+
+        // Validate enum fields
+        if ( isset( $fields['status'] ) && ! in_array( $fields['status'], [ 'standard', 'fictive' ], true ) ) {
+            $fields['status'] = 'standard';
+        }
+        if ( isset( $fields['lifecycle_status'] ) && ! in_array( $fields['lifecycle_status'], [ 'draft', 'active', 'sold', 'completed' ], true ) ) {
+            $fields['lifecycle_status'] = 'draft';
+        }
+
+        // Cast numeric fields
+        if ( isset( $fields['customer_id'] ) )  $fields['customer_id']  = $fields['customer_id'] ? (int) $fields['customer_id'] : null;
+        if ( isset( $fields['author_id'] ) )    $fields['author_id']    = $fields['author_id'] ? (int) $fields['author_id'] : null;
+        if ( isset( $fields['total_amount'] ) ) $fields['total_amount'] = (float) $fields['total_amount'];
+        if ( isset( $fields['paid_amount'] ) )  $fields['paid_amount']  = (float) $fields['paid_amount'];
+
         // Cast booleans to int for DB
         foreach ( [ 'is_rs_uploaded', 'is_credit_checked', 'is_receipt_checked', 'is_corrected' ] as $bool_col ) {
             if ( isset( $fields[ $bool_col ] ) ) {
@@ -993,24 +1042,33 @@ class CIG_Invoice {
     private static function save_items( $invoice_id, $items ) {
         global $wpdb;
         $table = self::items_table();
+        $allowed_statuses = [ 'none', 'sold', 'reserved', 'canceled' ];
 
         foreach ( $items as $i => $item ) {
+            $item_status = $item['itemStatus'] ?? $item['item_status'] ?? 'none';
+            if ( ! in_array( $item_status, $allowed_statuses, true ) ) {
+                $item_status = 'none';
+            }
+
+            $qty   = max( 0, (float) ( $item['qty'] ?? 1 ) );
+            $price = (float) ( $item['price'] ?? 0 );
+
             $wpdb->insert( $table, [
                 'invoice_id'       => $invoice_id,
-                'sort_order'       => $i,
-                'product_id'       => $item['productId'] ?? $item['product_id'] ?? null,
-                'legacy_product_id' => $item['legacyProductId'] ?? $item['legacy_product_id'] ?? null,
-                'name'             => $item['name'] ?? '',
-                'brand'            => $item['brand'] ?? '',
-                'sku'              => $item['sku'] ?? '',
-                'description'      => $item['description'] ?? '',
-                'image_url'        => $item['imageUrl'] ?? $item['image_url'] ?? '',
-                'qty'              => $item['qty'] ?? 1,
-                'price'            => $item['price'] ?? 0,
-                'total'            => ( $item['qty'] ?? 1 ) * ( $item['price'] ?? 0 ),
-                'item_status'      => $item['itemStatus'] ?? $item['item_status'] ?? 'none',
-                'reservation_days' => $item['reservationDays'] ?? $item['reservation_days'] ?? 0,
-                'warranty'         => $item['warranty'] ?? '',
+                'sort_order'       => (int) $i,
+                'product_id'       => isset( $item['productId'] ) || isset( $item['product_id'] ) ? (int) ( $item['productId'] ?? $item['product_id'] ) : null,
+                'legacy_product_id' => isset( $item['legacyProductId'] ) || isset( $item['legacy_product_id'] ) ? (int) ( $item['legacyProductId'] ?? $item['legacy_product_id'] ) : null,
+                'name'             => sanitize_text_field( $item['name'] ?? '' ),
+                'brand'            => sanitize_text_field( $item['brand'] ?? '' ),
+                'sku'              => sanitize_text_field( $item['sku'] ?? '' ),
+                'description'      => sanitize_textarea_field( $item['description'] ?? '' ),
+                'image_url'        => esc_url_raw( $item['imageUrl'] ?? $item['image_url'] ?? '' ),
+                'qty'              => $qty,
+                'price'            => $price,
+                'total'            => $qty * $price,
+                'item_status'      => $item_status,
+                'reservation_days' => max( 0, (int) ( $item['reservationDays'] ?? $item['reservation_days'] ?? 0 ) ),
+                'warranty'         => sanitize_text_field( $item['warranty'] ?? '' ),
             ] );
         }
     }
@@ -1021,15 +1079,21 @@ class CIG_Invoice {
     private static function save_payments( $invoice_id, $payments ) {
         global $wpdb;
         $table = self::payments_table();
+        $allowed_methods = [ 'cash', 'company_transfer', 'credit', 'consignment', 'other' ];
 
         foreach ( $payments as $payment ) {
+            $method = $payment['method'] ?? 'cash';
+            if ( ! in_array( $method, $allowed_methods, true ) ) {
+                $method = 'cash';
+            }
+
             $wpdb->insert( $table, [
                 'invoice_id'   => $invoice_id,
-                'payment_date' => $payment['date'] ?? $payment['payment_date'] ?? current_time( 'Y-m-d' ),
-                'amount'       => $payment['amount'] ?? 0,
-                'method'       => $payment['method'] ?? 'cash',
-                'comment'      => $payment['comment'] ?? '',
-                'user_id'      => $payment['userId'] ?? $payment['user_id'] ?? null,
+                'payment_date' => sanitize_text_field( $payment['date'] ?? $payment['payment_date'] ?? current_time( 'Y-m-d' ) ),
+                'amount'       => (float) ( $payment['amount'] ?? 0 ),
+                'method'       => $method,
+                'comment'      => sanitize_textarea_field( $payment['comment'] ?? '' ),
+                'user_id'      => isset( $payment['userId'] ) || isset( $payment['user_id'] ) ? (int) ( $payment['userId'] ?? $payment['user_id'] ) : null,
             ] );
         }
     }

@@ -1,4 +1,7 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
 /**
  * Auth controller — session (cookie), JWT login, logout, me endpoints.
  */

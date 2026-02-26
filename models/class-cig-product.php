@@ -1,4 +1,7 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
 /**
  * Product model — reads from WooCommerce when available, falls back to custom table.
  * Stores CIG-specific fields (reserved, nameKa) as WooCommerce product meta.
@@ -356,6 +359,25 @@ class CIG_Product {
                 }
             }
         }
+
+        // Sanitize text fields
+        $text_fields = [ 'sku', 'name', 'name_ka', 'brand', 'category' ];
+        foreach ( $text_fields as $tf ) {
+            if ( isset( $fields[ $tf ] ) ) {
+                $fields[ $tf ] = sanitize_text_field( $fields[ $tf ] );
+            }
+        }
+        if ( isset( $fields['description'] ) ) {
+            $fields['description'] = sanitize_textarea_field( $fields['description'] );
+        }
+        if ( isset( $fields['image_url'] ) ) {
+            $fields['image_url'] = esc_url_raw( $fields['image_url'] );
+        }
+
+        // Cast numeric fields
+        if ( isset( $fields['price'] ) )    $fields['price']    = (float) $fields['price'];
+        if ( isset( $fields['stock'] ) )    $fields['stock']    = (int) $fields['stock'];
+        if ( isset( $fields['reserved'] ) ) $fields['reserved'] = max( 0, (int) $fields['reserved'] );
 
         if ( isset( $fields['is_active'] ) ) {
             $fields['is_active'] = $fields['is_active'] ? 1 : 0;

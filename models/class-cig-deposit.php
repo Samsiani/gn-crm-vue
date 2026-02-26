@@ -1,4 +1,7 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
 /**
  * Deposit model — External balance tracking (credit/debit).
  */
@@ -109,10 +112,12 @@ class CIG_Deposit {
     private static function extract_fields( $data ) {
         $fields = [];
 
-        if ( isset( $data['date'] ) )   $fields['deposit_date'] = $data['date'];
+        if ( isset( $data['date'] ) )   $fields['deposit_date'] = sanitize_text_field( $data['date'] );
         if ( isset( $data['amount'] ) )  $fields['amount'] = (float) $data['amount'];
-        if ( isset( $data['type'] ) )    $fields['type'] = $data['type'];
-        if ( isset( $data['note'] ) )    $fields['note'] = $data['note'];
+        if ( isset( $data['type'] ) ) {
+            $fields['type'] = in_array( $data['type'], [ 'credit', 'debit' ], true ) ? $data['type'] : 'credit';
+        }
+        if ( isset( $data['note'] ) )    $fields['note'] = sanitize_textarea_field( $data['note'] );
 
         return $fields;
     }
