@@ -62,8 +62,37 @@ class CIG_Customer {
         $query_params = array_merge( $params, [ $limit, $offset ] );
         $rows = $wpdb->get_results( $wpdb->prepare( $query, ...$query_params ), ARRAY_A );
 
-        $customers = array_map( function( $row ) {
-            return self::hydrate( $row, true );
+        // Batch-fetch stats for all customers in 1 query (fixes N+1)
+        $stats_by_id = [];
+        if ( ! empty( $rows ) ) {
+            $customer_ids    = array_column( $rows, 'id' );
+            $ids_sql         = implode( ',', array_map( 'intval', $customer_ids ) );
+            $invoices_table  = $wpdb->prefix . 'cig_invoices';
+
+            $stat_rows = $wpdb->get_results(
+                "SELECT
+                    customer_id,
+                    COALESCE(SUM(paid_amount), 0) AS total_spent,
+                    COUNT(*) AS invoice_count,
+                    COALESCE(SUM(GREATEST(0, total_amount - paid_amount)), 0) AS outstanding
+                 FROM {$invoices_table}
+                 WHERE customer_id IN ({$ids_sql})
+                   AND status = 'standard'
+                   AND lifecycle_status != 'draft'
+                 GROUP BY customer_id",
+                ARRAY_A
+            );
+            foreach ( $stat_rows as $stat ) {
+                $stats_by_id[ (int) $stat['customer_id'] ] = [
+                    'total_spent'   => (float) $stat['total_spent'],
+                    'invoice_count' => (int)   $stat['invoice_count'],
+                    'outstanding'   => (float) $stat['outstanding'],
+                ];
+            }
+        }
+
+        $customers = array_map( function( $row ) use ( $stats_by_id ) {
+            return self::hydrate( $row, true, $stats_by_id[ (int) $row['id'] ] ?? null );
         }, $rows );
 
         return [
@@ -103,7 +132,12 @@ class CIG_Customer {
         return $wpdb->delete( self::table(), [ 'id' => $id ] );
     }
 
-    private static function hydrate( $row, $with_stats = false ) {
+    /**
+     * @param array      $row        Raw DB row.
+     * @param bool       $with_stats Whether to include financial stats.
+     * @param array|null $pre_stats  Pre-fetched stats array (batch mode). Null = query individually.
+     */
+    private static function hydrate( $row, $with_stats = false, $pre_stats = null ) {
         $customer = [
             'id'      => (int) $row['id'],
             'name'    => $row['name'],
@@ -115,7 +149,7 @@ class CIG_Customer {
         ];
 
         if ( $with_stats ) {
-            $stats = self::compute_stats( $row['id'] );
+            $stats = $pre_stats !== null ? $pre_stats : self::compute_stats( $row['id'] );
             $customer['totalSpent']    = $stats['total_spent'];
             $customer['invoiceCount']  = $stats['invoice_count'];
             $customer['outstanding']   = $stats['outstanding'];

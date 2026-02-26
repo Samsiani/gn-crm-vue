@@ -179,10 +179,39 @@ class CIG_Invoice {
         $query_params = array_merge( $params, [ $limit, $offset ] );
         $rows = $wpdb->get_results( $wpdb->prepare( $query, ...$query_params ), ARRAY_A );
 
-        // Hydrate all
+        // Batch-fetch items and payments for all invoices in 2 queries (fixes N+1)
+        $items_by_id    = [];
+        $payments_by_id = [];
+
+        if ( ! empty( $rows ) ) {
+            $invoice_ids    = array_column( $rows, 'id' );
+            $ids_sql        = implode( ',', array_map( 'intval', $invoice_ids ) );
+
+            $all_items = $wpdb->get_results(
+                "SELECT * FROM {$items_table} WHERE invoice_id IN ({$ids_sql}) ORDER BY invoice_id, sort_order",
+                ARRAY_A
+            );
+            foreach ( $all_items as $item ) {
+                $items_by_id[ (int) $item['invoice_id'] ][] = $item;
+            }
+
+            $all_payments = $wpdb->get_results(
+                "SELECT * FROM {$payments_table} WHERE invoice_id IN ({$ids_sql}) ORDER BY invoice_id, payment_date",
+                ARRAY_A
+            );
+            foreach ( $all_payments as $payment ) {
+                $payments_by_id[ (int) $payment['invoice_id'] ][] = $payment;
+            }
+        }
+
+        // Hydrate all (uses pre-fetched data — 0 additional queries)
         $invoices = [];
         foreach ( $rows as $row ) {
-            $invoices[] = self::hydrate( $row );
+            $invoices[] = self::hydrate(
+                $row,
+                $items_by_id[ (int) $row['id'] ] ?? [],
+                $payments_by_id[ (int) $row['id'] ] ?? []
+            );
         }
 
         return [
@@ -398,41 +427,61 @@ class CIG_Invoice {
             }
         }
 
-        // ── 4. Monthly trend (last 6 months, always unfiltered by date params) ──
+        // ── 4. Monthly trend (last 6 months) — 2 queries replacing 12 ──────────
+        $six_month_start = gmdate( 'Y-m-01', strtotime( '-5 months' ) );
+        $today           = gmdate( 'Y-m-t' );
+
+        // Invoice metrics by month
+        $inv_by_month_rows = $wpdb->get_results( $wpdb->prepare(
+            "SELECT
+                DATE_FORMAT(created_at, '%%Y-%%m') AS ym,
+                COUNT(*) AS count,
+                COALESCE(SUM(total_amount), 0) AS revenue,
+                COALESCE(SUM(CASE WHEN lifecycle_status IN ('sold','completed') THEN 1 ELSE 0 END), 0) AS completed,
+                COALESCE(SUM(GREATEST(0, total_amount - paid_amount)), 0) AS outstanding
+             FROM {$table}
+             WHERE status = 'standard' AND created_at >= %s AND created_at <= %s
+             GROUP BY DATE_FORMAT(created_at, '%%Y-%%m')",
+            $six_month_start, $today
+        ), ARRAY_A );
+        $inv_map = [];
+        foreach ( $inv_by_month_rows as $r ) {
+            $inv_map[ $r['ym'] ] = $r;
+        }
+
+        // Payment totals by month
+        $pay_by_month_rows = $wpdb->get_results( $wpdb->prepare(
+            "SELECT
+                DATE_FORMAT(p.payment_date, '%%Y-%%m') AS ym,
+                COALESCE(SUM(p.amount), 0) AS paid
+             FROM {$pays_t} p
+             JOIN {$table} i ON i.id = p.invoice_id
+             WHERE i.status = 'standard' AND p.method != 'consignment'
+               AND p.payment_date >= %s AND p.payment_date <= %s
+             GROUP BY DATE_FORMAT(p.payment_date, '%%Y-%%m')",
+            $six_month_start, $today
+        ), ARRAY_A );
+        $pay_map = [];
+        foreach ( $pay_by_month_rows as $r ) {
+            $pay_map[ $r['ym'] ] = (float) $r['paid'];
+        }
+
+        // Build 6-month ordered trend array
         $monthly_trend = [];
         for ( $i = 5; $i >= 0; $i-- ) {
             $month_start = gmdate( 'Y-m-01', strtotime( "-{$i} months" ) );
-            $month_end   = gmdate( 'Y-m-t', strtotime( "-{$i} months" ) );
+            $ym          = gmdate( 'Y-m', strtotime( $month_start ) );
+            $inv_row     = $inv_map[ $ym ] ?? null;
+            $count       = $inv_row ? (int) $inv_row['count'] : 0;
+            $revenue     = $inv_row ? (float) $inv_row['revenue'] : 0.0;
 
-            $inv_row = $wpdb->get_row( $wpdb->prepare(
-                "SELECT
-                    COUNT(*) as count,
-                    COALESCE(SUM(total_amount), 0) as revenue,
-                    COALESCE(SUM(CASE WHEN lifecycle_status IN ('sold','completed') THEN 1 ELSE 0 END), 0) as completed,
-                    COALESCE(SUM(GREATEST(0, total_amount - paid_amount)), 0) as outstanding
-                 FROM {$table}
-                 WHERE status = 'standard' AND created_at >= %s AND created_at <= %s",
-                $month_start, $month_end
-            ), ARRAY_A );
-
-            $paid_in_month = (float) $wpdb->get_var( $wpdb->prepare(
-                "SELECT COALESCE(SUM(p.amount), 0)
-                 FROM {$pays_t} p
-                 JOIN {$table} i ON i.id = p.invoice_id
-                 WHERE i.status = 'standard' AND p.method != 'consignment'
-                   AND p.payment_date >= %s AND p.payment_date <= %s",
-                $month_start, $month_end
-            ) );
-
-            $count   = (int) $inv_row['count'];
-            $revenue = (float) $inv_row['revenue'];
             $monthly_trend[] = [
                 'month'       => gmdate( 'M Y', strtotime( $month_start ) ),
                 'revenue'     => $revenue,
-                'paid'        => $paid_in_month,
+                'paid'        => $pay_map[ $ym ] ?? 0.0,
                 'count'       => $count,
-                'outstanding' => (float) $inv_row['outstanding'],
-                'completed'   => (int) $inv_row['completed'],
+                'outstanding' => $inv_row ? (float) $inv_row['outstanding'] : 0.0,
+                'completed'   => $inv_row ? (int) $inv_row['completed'] : 0,
                 'avgOrder'    => $count > 0 ? round( $revenue / $count, 2 ) : 0,
             ];
         }
@@ -521,22 +570,253 @@ class CIG_Invoice {
         ];
     }
 
+    /**
+     * Aggregate KPI data for StatisticsPage.
+     * Replaces client-side per_page=9999 aggregations with SQL GROUP BY queries.
+     *
+     * @param array $args Optional date_from / date_to.
+     * @return array overview, products, customers
+     */
+    public static function get_statistics_kpi( $args = [] ) {
+        global $wpdb;
+
+        $table   = self::table();
+        $items_t = self::items_table();
+        $pays_t  = self::payments_table();
+
+        $from = sanitize_text_field( $args['date_from'] ?? '' );
+        $to   = sanitize_text_field( $args['date_to'] ?? '' );
+
+        // Date conditions on invoice.created_at
+        $inv_date = '';
+        if ( $from ) $inv_date .= $wpdb->prepare( ' AND i.created_at >= %s', $from );
+        if ( $to )   $inv_date .= $wpdb->prepare( ' AND i.created_at <= %s', $to );
+
+        // Date conditions on payment.payment_date
+        $pay_date = '';
+        if ( $from ) $pay_date .= $wpdb->prepare( ' AND p.payment_date >= %s', $from );
+        if ( $to )   $pay_date .= $wpdb->prepare( ' AND p.payment_date <= %s', $to );
+
+        // ── 1. Overview: standard invoices, date-filtered ─────────────────────
+        $ov_row = $wpdb->get_row(
+            "SELECT
+                COUNT(*) AS invoice_count,
+                COALESCE(SUM(paid_amount), 0) AS total_revenue,
+                COALESCE(SUM(GREATEST(0, total_amount - paid_amount)), 0) AS outstanding_balance
+             FROM {$table} i
+             WHERE i.status = 'standard' {$inv_date}",
+            ARRAY_A
+        );
+
+        // ── 2. Pending reservations ───────────────────────────────────────────
+        $pending = (int) $wpdb->get_var(
+            "SELECT COUNT(DISTINCT i.id) FROM {$table} i
+             WHERE i.status = 'standard' AND i.lifecycle_status = 'active'
+               AND EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')
+               {$inv_date}"
+        );
+
+        // ── 3. Payment method totals (filtered by payment_date) ───────────────
+        $method_rows = $wpdb->get_results(
+            "SELECT p.method, SUM(p.amount) AS total
+             FROM {$pays_t} p
+             JOIN {$table} i ON i.id = p.invoice_id
+             WHERE i.status = 'standard' {$pay_date}
+             GROUP BY p.method",
+            ARRAY_A
+        );
+        $method_totals = [ 'cash' => 0, 'company_transfer' => 0, 'credit' => 0, 'consignment' => 0, 'other' => 0 ];
+        foreach ( $method_rows as $r ) {
+            if ( array_key_exists( $r['method'], $method_totals ) ) {
+                $method_totals[ $r['method'] ] = (float) $r['total'];
+            }
+        }
+
+        // ── 4. Top users (standard, date-filtered) ────────────────────────────
+        $user_rows = $wpdb->get_results(
+            "SELECT i.author_id, COUNT(*) AS invoice_count, COALESCE(SUM(i.paid_amount), 0) AS revenue
+             FROM {$table} i
+             WHERE i.status = 'standard' AND i.author_id IS NOT NULL {$inv_date}
+             GROUP BY i.author_id
+             ORDER BY revenue DESC",
+            ARRAY_A
+        );
+        $top_users = array_map( fn( $r ) => [
+            'authorId'     => (int) $r['author_id'],
+            'invoiceCount' => (int) $r['invoice_count'],
+            'revenue'      => (float) $r['revenue'],
+        ], $user_rows );
+
+        // ── 5. Lifecycle distribution (date-filtered) ─────────────────────────
+        $lifecycle_rows = $wpdb->get_results(
+            "SELECT
+                SUM(CASE WHEN lifecycle_status IN ('sold','completed') THEN 1 ELSE 0 END) AS sold,
+                SUM(CASE WHEN status = 'fictive' OR lifecycle_status = 'draft' THEN 1 ELSE 0 END) AS draft,
+                SUM(CASE WHEN status = 'standard' AND lifecycle_status = 'active' AND
+                    EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')
+                    THEN 1 ELSE 0 END) AS reserved
+             FROM {$table} i
+             WHERE 1=1 {$inv_date}",
+            ARRAY_A
+        );
+        $lifecycle_dist = [
+            'sold'     => (int) ( $lifecycle_rows[0]['sold'] ?? 0 ),
+            'draft'    => (int) ( $lifecycle_rows[0]['draft'] ?? 0 ),
+            'reserved' => (int) ( $lifecycle_rows[0]['reserved'] ?? 0 ),
+        ];
+
+        // ── 6. Fictive stats (date-filtered) ─────────────────────────────────
+        $fictive_row = $wpdb->get_row(
+            "SELECT COUNT(*) AS fcount, COALESCE(SUM(total_amount), 0) AS ftotal
+             FROM {$table} i
+             WHERE i.status = 'fictive' {$inv_date}",
+            ARRAY_A
+        );
+        $all_count_row = $wpdb->get_var(
+            "SELECT COUNT(*) FROM {$table} i WHERE 1=1 {$inv_date}"
+        );
+        $fictive = [
+            'count'         => (int)   ( $fictive_row['fcount'] ?? 0 ),
+            'totalAmount'   => (float) ( $fictive_row['ftotal'] ?? 0 ),
+            'totalAllCount' => (int) $all_count_row,
+        ];
+
+        // ── 7. "Other" accumulated payments (date-filtered by payment_date) ───
+        $other_accumulated = (float) $wpdb->get_var(
+            "SELECT COALESCE(SUM(p.amount), 0)
+             FROM {$pays_t} p
+             JOIN {$table} i ON i.id = p.invoice_id
+             WHERE i.status = 'standard' AND p.method = 'other' {$pay_date}"
+        );
+
+        // ── 8. Monthly trend for revenue chart (last 6 months, unfiltered) ───
+        $six_ago  = gmdate( 'Y-m-01', strtotime( '-5 months' ) );
+        $today    = gmdate( 'Y-m-t' );
+
+        $trend_inv = $wpdb->get_results( $wpdb->prepare(
+            "SELECT DATE_FORMAT(created_at, '%%Y-%%m') AS ym,
+                COALESCE(SUM(total_amount), 0) AS revenue
+             FROM {$table}
+             WHERE status = 'standard' AND created_at >= %s AND created_at <= %s
+             GROUP BY DATE_FORMAT(created_at, '%%Y-%%m')",
+            $six_ago, $today
+        ), ARRAY_A );
+        $trend_inv_map = array_column( $trend_inv, null, 'ym' );
+
+        $trend_pay = $wpdb->get_results( $wpdb->prepare(
+            "SELECT DATE_FORMAT(p.payment_date, '%%Y-%%m') AS ym,
+                COALESCE(SUM(p.amount), 0) AS cash_in
+             FROM {$pays_t} p
+             JOIN {$table} i ON i.id = p.invoice_id
+             WHERE i.status = 'standard' AND p.method != 'consignment'
+               AND p.payment_date >= %s AND p.payment_date <= %s
+             GROUP BY DATE_FORMAT(p.payment_date, '%%Y-%%m')",
+            $six_ago, $today
+        ), ARRAY_A );
+        $trend_pay_map = array_column( $trend_pay, null, 'ym' );
+
+        $monthly_trend = [];
+        for ( $m = 5; $m >= 0; $m-- ) {
+            $ts     = strtotime( "-{$m} months" );
+            $ym     = gmdate( 'Y-m', $ts );
+            $label  = gmdate( 'M Y', $ts );
+            $monthly_trend[] = [
+                'month'  => $label,
+                'revenue' => (float) ( $trend_inv_map[ $ym ]['revenue'] ?? 0 ),
+                'cashIn'  => (float) ( $trend_pay_map[ $ym ]['cash_in'] ?? 0 ),
+            ];
+        }
+
+        // ── 9. Product performance (standard, date-filtered items) ────────────
+        $prod_rows = $wpdb->get_results(
+            "SELECT
+                it.product_id,
+                COALESCE(MAX(NULLIF(it.name,  '')), '') AS snap_name,
+                COALESCE(MAX(NULLIF(it.sku,   '')), '') AS snap_sku,
+                COALESCE(MAX(NULLIF(it.brand, '')), '') AS snap_brand,
+                SUM(it.qty) AS units_sold,
+                SUM(it.qty * it.price) AS revenue,
+                AVG(it.price) AS avg_price,
+                SUM(CASE WHEN it.item_status = 'reserved' THEN it.qty ELSE 0 END) AS reserved
+             FROM {$items_t} it
+             JOIN {$table} i ON i.id = it.invoice_id
+             WHERE i.status = 'standard' AND it.item_status != 'canceled' {$inv_date}
+             GROUP BY it.product_id
+             ORDER BY revenue DESC",
+            ARRAY_A
+        );
+        $products = array_map( fn( $r ) => [
+            'productId'   => $r['product_id'] ? (int) $r['product_id'] : null,
+            'snapshotName'  => $r['snap_name'],
+            'snapshotSku'   => $r['snap_sku'],
+            'snapshotBrand' => $r['snap_brand'],
+            'unitsSold'   => (float) $r['units_sold'],
+            'revenue'     => (float) $r['revenue'],
+            'avgPrice'    => (float) $r['avg_price'],
+            'reserved'    => (float) $r['reserved'],
+        ], $prod_rows );
+
+        // ── 10. Customer insights (standard, date-filtered) ───────────────────
+        $cust_rows = $wpdb->get_results(
+            "SELECT
+                i.customer_id,
+                COALESCE(SUM(i.paid_amount), 0) AS total_spent,
+                COUNT(*) AS invoice_count,
+                COALESCE(SUM(GREATEST(0, i.total_amount - i.paid_amount)), 0) AS outstanding
+             FROM {$table} i
+             WHERE i.status = 'standard' AND i.customer_id IS NOT NULL {$inv_date}
+             GROUP BY i.customer_id",
+            ARRAY_A
+        );
+        $customers = array_map( fn( $r ) => [
+            'customerId'   => (int)   $r['customer_id'],
+            'totalSpent'   => (float) $r['total_spent'],
+            'invoiceCount' => (int)   $r['invoice_count'],
+            'outstanding'  => (float) $r['outstanding'],
+        ], $cust_rows );
+
+        return [
+            'overview' => [
+                'invoiceCount'          => (int)   ( $ov_row['invoice_count'] ?? 0 ),
+                'totalRevenue'          => (float) ( $ov_row['total_revenue'] ?? 0 ),
+                'outstandingBalance'    => (float) ( $ov_row['outstanding_balance'] ?? 0 ),
+                'pendingReservations'   => $pending,
+                'methodTotals'          => $method_totals,
+                'topUsers'              => $top_users,
+                'lifecycleDistribution' => $lifecycle_dist,
+                'fictive'               => $fictive,
+                'otherAccumulated'      => $other_accumulated,
+                'monthlyTrend'          => $monthly_trend,
+            ],
+            'products'  => $products,
+            'customers' => $customers,
+        ];
+    }
+
     // ── Private helpers ──
 
     /**
      * Hydrate a DB row into the camelCase shape the Vue frontend expects.
+     *
+     * @param array      $row       Raw DB row from wp_cig_invoices.
+     * @param array|null $pre_items Pre-fetched item rows (batch mode). Null = query individually.
+     * @param array|null $pre_pays  Pre-fetched payment rows (batch mode). Null = query individually.
      */
-    private static function hydrate( $row ) {
+    private static function hydrate( $row, $pre_items = null, $pre_pays = null ) {
         global $wpdb;
 
-        // Fetch items
-        $items_rows = $wpdb->get_results(
-            $wpdb->prepare(
-                "SELECT * FROM " . self::items_table() . " WHERE invoice_id = %d ORDER BY sort_order",
-                $row['id']
-            ),
-            ARRAY_A
-        );
+        // Fetch items (individual query only when not batch-loaded)
+        if ( $pre_items !== null ) {
+            $items_rows = $pre_items;
+        } else {
+            $items_rows = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT * FROM " . self::items_table() . " WHERE invoice_id = %d ORDER BY sort_order",
+                    $row['id']
+                ),
+                ARRAY_A
+            );
+        }
 
         $items = array_map( function( $item ) {
             return [
@@ -556,14 +836,18 @@ class CIG_Invoice {
             ];
         }, $items_rows );
 
-        // Fetch payments
-        $payment_rows = $wpdb->get_results(
-            $wpdb->prepare(
-                "SELECT * FROM " . self::payments_table() . " WHERE invoice_id = %d ORDER BY payment_date",
-                $row['id']
-            ),
-            ARRAY_A
-        );
+        // Fetch payments (individual query only when not batch-loaded)
+        if ( $pre_pays !== null ) {
+            $payment_rows = $pre_pays;
+        } else {
+            $payment_rows = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT * FROM " . self::payments_table() . " WHERE invoice_id = %d ORDER BY payment_date",
+                    $row['id']
+                ),
+                ARRAY_A
+            );
+        }
 
         $payments = array_map( function( $p ) {
             return [

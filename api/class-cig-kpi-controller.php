@@ -16,6 +16,12 @@ class CIG_KPI_Controller extends CIG_REST_Controller {
             'callback'            => [ $this, 'other_accumulated' ],
             'permission_callback' => [ 'CIG_RBAC', 'can_read' ],
         ] );
+
+        register_rest_route( $this->namespace, '/kpi/statistics', [
+            'methods'             => 'GET',
+            'callback'            => [ $this, 'statistics' ],
+            'permission_callback' => [ 'CIG_RBAC', 'can_read' ],
+        ] );
     }
 
     /**
@@ -30,6 +36,22 @@ class CIG_KPI_Controller extends CIG_REST_Controller {
         ];
 
         $data = CIG_Invoice::get_dashboard_kpi( $args );
+
+        return rest_ensure_response( $data );
+    }
+
+    /**
+     * GET /kpi/statistics
+     * Returns all server-computed aggregations needed by StatisticsPage.
+     * Supports optional date_from / date_to query params.
+     */
+    public function statistics( $request ) {
+        $args = [
+            'date_from' => sanitize_text_field( $request->get_param( 'date_from' ) ?? '' ),
+            'date_to'   => sanitize_text_field( $request->get_param( 'date_to' ) ?? '' ),
+        ];
+
+        $data = CIG_Invoice::get_statistics_kpi( $args );
 
         return rest_ensure_response( $data );
     }

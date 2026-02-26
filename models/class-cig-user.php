@@ -192,6 +192,45 @@ class CIG_User {
         return $wpdb->delete( self::table(), [ 'id' => $id ] );
     }
 
+    /**
+     * Batch-fetch invoice stats for a set of user IDs in a single SQL query.
+     * Returns [ user_id => [ revenue, invoiceCount, outstanding ] ]
+     *
+     * @param int[] $user_ids
+     * @return array
+     */
+    public static function batch_invoice_stats( array $user_ids ) {
+        if ( empty( $user_ids ) ) {
+            return [];
+        }
+
+        global $wpdb;
+        $invoices_t = $wpdb->prefix . 'cig_invoices';
+        $ids_sql    = implode( ',', array_map( 'intval', $user_ids ) );
+
+        $rows = $wpdb->get_results(
+            "SELECT
+                author_id,
+                COALESCE(SUM(paid_amount), 0) AS revenue,
+                COUNT(*) AS invoice_count,
+                COALESCE(SUM(GREATEST(0, total_amount - paid_amount)), 0) AS outstanding
+             FROM {$invoices_t}
+             WHERE status = 'standard' AND author_id IN ({$ids_sql})
+             GROUP BY author_id",
+            ARRAY_A
+        );
+
+        $map = [];
+        foreach ( $rows as $r ) {
+            $map[ (int) $r['author_id'] ] = [
+                'revenue'      => (float) $r['revenue'],
+                'invoiceCount' => (int)   $r['invoice_count'],
+                'outstanding'  => (float) $r['outstanding'],
+            ];
+        }
+        return $map;
+    }
+
     private static function hydrate( $row ) {
         return [
             'id'        => (int) $row['id'],

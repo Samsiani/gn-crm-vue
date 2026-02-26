@@ -38,7 +38,7 @@ class CIG_Users_Controller extends CIG_REST_Controller {
 
     public function list_items( $request ) {
         $pagination = $this->get_pagination_params( $request );
-        $sorting = $this->get_sort_params( $request );
+        $sorting    = $this->get_sort_params( $request );
 
         $args = array_merge( $pagination, $sorting, [
             'search' => sanitize_text_field( $request->get_param( 'search' ) ?: '' ),
@@ -50,6 +50,18 @@ class CIG_Users_Controller extends CIG_REST_Controller {
         }
 
         $result = CIG_User::list( $args );
+
+        // Optionally attach per-user invoice stats in a single batch query
+        if ( filter_var( $request->get_param( 'include_stats' ), FILTER_VALIDATE_BOOLEAN ) ) {
+            $user_ids  = array_column( $result['data'], 'id' );
+            $stats_map = CIG_User::batch_invoice_stats( $user_ids );
+            $result['data'] = array_map( function( $user ) use ( $stats_map ) {
+                $s = $stats_map[ $user['id'] ] ?? [ 'revenue' => 0, 'invoiceCount' => 0, 'outstanding' => 0 ];
+                $user['stats'] = $s;
+                return $user;
+            }, $result['data'] );
+        }
+
         return $this->paginated_response( $result );
     }
 

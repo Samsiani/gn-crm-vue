@@ -81,7 +81,10 @@ class CIG_Activator {
             warranty            VARCHAR(20) NOT NULL DEFAULT '',
             PRIMARY KEY (id),
             KEY idx_invoice (invoice_id),
-            KEY idx_product (product_id)
+            KEY idx_product (product_id),
+            KEY idx_invoice_status (invoice_id, item_status),
+            KEY idx_item_status (item_status),
+            KEY idx_product_status (product_id, item_status)
         ) $charset;" );
 
         // ── Payments ──
@@ -97,7 +100,9 @@ class CIG_Activator {
             PRIMARY KEY (id),
             KEY idx_invoice (invoice_id),
             KEY idx_date (payment_date),
-            KEY idx_method (method)
+            KEY idx_method (method),
+            KEY idx_invoice_method (invoice_id, method),
+            KEY idx_method_date (method, payment_date)
         ) $charset;" );
 
         // ── Customers ──
@@ -140,7 +145,9 @@ class CIG_Activator {
             updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             UNIQUE KEY uk_sku (sku),
-            KEY idx_legacy (legacy_post_id)
+            KEY idx_legacy (legacy_post_id),
+            KEY idx_category (category),
+            KEY idx_is_active (is_active)
         ) $charset;" );
 
         // ── Deposits ──
@@ -178,7 +185,9 @@ class CIG_Activator {
             is_active         TINYINT(1) NOT NULL DEFAULT 1,
             created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            KEY idx_wp_user (wp_user_id)
+            KEY idx_wp_user (wp_user_id),
+            KEY idx_role (role),
+            KEY idx_is_active_role (is_active, role)
         ) $charset;" );
 
         // ── Company (single-row config) ──
@@ -317,6 +326,51 @@ class CIG_Activator {
         }
         if ( ! in_array( 'signature_url', $existing, true ) ) {
             $wpdb->query( "ALTER TABLE {$table} ADD COLUMN signature_url VARCHAR(500) NOT NULL DEFAULT '' AFTER logo_url" );
+        }
+
+        $wpdb->suppress_errors( false );
+    }
+
+    /**
+     * Add compound performance indexes (DB version 1.3).
+     * Idempotent: checks INFORMATION_SCHEMA before each ALTER.
+     */
+    public static function add_performance_indexes() {
+        global $wpdb;
+        $prefix = $wpdb->prefix . 'cig_';
+        $db     = DB_NAME;
+
+        $wpdb->suppress_errors( true );
+
+        $indexes = [
+            // Invoices
+            [ 'table' => $prefix . 'invoices',       'name' => 'idx_lifecycle_status', 'sql' => "ADD KEY idx_lifecycle_status (lifecycle_status)" ],
+            [ 'table' => $prefix . 'invoices',       'name' => 'idx_status_created',   'sql' => "ADD KEY idx_status_created (status, created_at)" ],
+            [ 'table' => $prefix . 'invoices',       'name' => 'idx_customer_created', 'sql' => "ADD KEY idx_customer_created (customer_id, created_at)" ],
+            // Invoice items
+            [ 'table' => $prefix . 'invoice_items',  'name' => 'idx_invoice_status',   'sql' => "ADD KEY idx_invoice_status (invoice_id, item_status)" ],
+            [ 'table' => $prefix . 'invoice_items',  'name' => 'idx_item_status',       'sql' => "ADD KEY idx_item_status (item_status)" ],
+            [ 'table' => $prefix . 'invoice_items',  'name' => 'idx_product_status',   'sql' => "ADD KEY idx_product_status (product_id, item_status)" ],
+            // Payments
+            [ 'table' => $prefix . 'payments',       'name' => 'idx_invoice_method',   'sql' => "ADD KEY idx_invoice_method (invoice_id, method)" ],
+            [ 'table' => $prefix . 'payments',       'name' => 'idx_method_date',       'sql' => "ADD KEY idx_method_date (method, payment_date)" ],
+            // Products
+            [ 'table' => $prefix . 'products',       'name' => 'idx_category',          'sql' => "ADD KEY idx_category (category)" ],
+            [ 'table' => $prefix . 'products',       'name' => 'idx_is_active',         'sql' => "ADD KEY idx_is_active (is_active)" ],
+            // Users
+            [ 'table' => $prefix . 'users',          'name' => 'idx_role',              'sql' => "ADD KEY idx_role (role)" ],
+            [ 'table' => $prefix . 'users',          'name' => 'idx_is_active_role',    'sql' => "ADD KEY idx_is_active_role (is_active, role)" ],
+        ];
+
+        foreach ( $indexes as $idx ) {
+            $exists = $wpdb->get_var( $wpdb->prepare(
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+                 WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND INDEX_NAME = %s",
+                $db, $idx['table'], $idx['name']
+            ) );
+            if ( ! $exists ) {
+                $wpdb->query( "ALTER TABLE {$idx['table']} {$idx['sql']}" );
+            }
         }
 
         $wpdb->suppress_errors( false );
