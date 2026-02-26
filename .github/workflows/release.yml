@@ -52,8 +52,8 @@ jobs:
         if: steps.tag_check.outputs.exists == 'false'
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          ZIP_NAME="cig-headless-v${VERSION}.zip"
-          STAGING="/tmp/zip-staging/cig-headless"
+          ZIP_NAME="gn-crm-vue-v${VERSION}.zip"
+          STAGING="/tmp/zip-staging/gn-crm-vue"
           mkdir -p "$STAGING"
           rsync -av \
             --exclude='.git' \
@@ -66,7 +66,7 @@ jobs:
           test -f "$STAGING/cig-headless.php"         || { echo "::error::cig-headless.php missing"; exit 1; }
           test -f "$STAGING/dist/.vite/manifest.json" || { echo "::error::manifest.json missing";    exit 1; }
           test -d "$STAGING/vendor"                   || { echo "::error::vendor/ missing";           exit 1; }
-          cd /tmp/zip-staging && zip -r "$GITHUB_WORKSPACE/$ZIP_NAME" cig-headless/
+          cd /tmp/zip-staging && zip -r "$GITHUB_WORKSPACE/$ZIP_NAME" gn-crm-vue/
           echo "zip_name=${ZIP_NAME}"                     >> "$GITHUB_ENV"
           echo "zip_path=${GITHUB_WORKSPACE}/${ZIP_NAME}" >> "$GITHUB_ENV"
 
