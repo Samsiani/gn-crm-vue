@@ -255,6 +255,7 @@ class CIG_Invoice {
 
         if ( ! $invoice_id ) {
             $wpdb->query( 'ROLLBACK' );
+            error_log( 'CIG: Invoice create failed — ROLLBACK executed.' );
             return new WP_Error( 'cig_create_failed', 'Failed to create invoice.', [ 'status' => 500 ] );
         }
 

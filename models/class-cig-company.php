@@ -19,7 +19,7 @@ class CIG_Company {
      */
     public static function get() {
         if ( self::$cache !== null ) {
-            return self::$cache ?: null;
+            return self::$cache === false ? null : self::$cache;
         }
 
         global $wpdb;
