@@ -9,15 +9,19 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class CIG_Frontend {
 
-    private $enqueue_assets = false;
-    private $manifest       = null;
+    private $enqueue_assets    = false;
+    private $manifest          = null;
+    private $footer_buffering  = false;
 
     public function init() {
         add_shortcode( 'cig_app', [ $this, 'render_shortcode' ] );
         add_action( 'wp_enqueue_scripts', [ $this, 'detect_shortcode' ] );
-        add_action( 'wp_footer', [ $this, 'maybe_enqueue_assets' ] );
-        add_action( 'wp_print_styles', [ $this, 'dequeue_theme_styles' ], 9999 );
-        add_action( 'wp_print_scripts', [ $this, 'dequeue_theme_scripts' ], 9999 );
+        add_action( 'wp_head',            [ $this, 'inject_page_overrides' ] );
+        add_action( 'wp_footer',          [ $this, 'maybe_enqueue_assets' ] );
+        add_action( 'wp_footer',          [ $this, 'start_footer_buffer' ], 0 );
+        add_action( 'wp_footer',          [ $this, 'end_footer_buffer' ], PHP_INT_MAX );
+        add_action( 'wp_print_styles',    [ $this, 'dequeue_theme_styles' ], 9999 );
+        add_action( 'wp_print_scripts',   [ $this, 'dequeue_theme_scripts' ], 9999 );
     }
 
     /**
@@ -28,7 +32,48 @@ class CIG_Frontend {
         if ( is_a( $post, 'WP_Post' ) && has_shortcode( $post->post_content, 'cig_app' ) ) {
             $this->enqueue_assets = true;
             $this->maybe_hide_admin_bar();
+
+            // WoodMart theme: remove skip-links HTML injected via wp_body_open.
+            remove_action( 'wp_body_open', 'woodmart_skip_links' );
         }
+    }
+
+    /**
+     * Inject CSS/JS overrides into <head> on CIG pages.
+     * Hides theme-injected elements that can't be removed via dequeue.
+     */
+    public function inject_page_overrides() {
+        if ( ! $this->enqueue_assets ) {
+            return;
+        }
+        // Fallback: hide skip-links even if remove_action above didn't match the theme's exact function name.
+        echo '<style>.wd-skip-links{display:none!important}</style>' . "\n";
+    }
+
+    /**
+     * Start output buffering at the very beginning of wp_footer so we can
+     * strip inline scripts that bypass WordPress's enqueue system (e.g.
+     * WoodMart's BrowserSync / refresh.js injected directly via wp_footer).
+     */
+    public function start_footer_buffer() {
+        if ( ! $this->enqueue_assets ) {
+            return;
+        }
+        $this->footer_buffering = true;
+        ob_start();
+    }
+
+    /**
+     * Flush the footer buffer, stripping any BrowserSync/dev-reload script tags.
+     */
+    public function end_footer_buffer() {
+        if ( ! $this->footer_buffering ) {
+            return;
+        }
+        $output = ob_get_clean();
+        // Strip <script src="...refresh.js..."></script> (WoodMart BrowserSync dev script).
+        $output = preg_replace( '/<script[^>]+["\'][^"\']*refresh\.js[^"\']*["\'][^>]*>\s*<\/script>/i', '', $output );
+        echo $output; // phpcs:ignore WordPress.Security.EscapeOutput
     }
 
     /**
