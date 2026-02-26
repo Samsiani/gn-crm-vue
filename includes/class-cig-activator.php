@@ -196,6 +196,8 @@ class CIG_Activator {
             bank_name_2             VARCHAR(200) NOT NULL DEFAULT '',
             iban_2                  VARCHAR(50) NOT NULL DEFAULT '',
             director_name           VARCHAR(200) NOT NULL DEFAULT '',
+            logo_url                VARCHAR(500) NOT NULL DEFAULT '',
+            signature_url           VARCHAR(500) NOT NULL DEFAULT '',
             reservation_days        INT NOT NULL DEFAULT 14,
             starting_invoice_number INT NOT NULL DEFAULT 1001,
             invoice_prefix          VARCHAR(10) NOT NULL DEFAULT 'GN',
@@ -292,6 +294,29 @@ class CIG_Activator {
         if ( ! $exists ) {
             $wpdb->query( "ALTER TABLE {$prefix}products
                 ADD FULLTEXT KEY ft_product_name (name, name_ka, sku)" );
+        }
+
+        $wpdb->suppress_errors( false );
+    }
+
+    /**
+     * Add logo_url and signature_url columns to wp_cig_company (DB version 1.2).
+     * Idempotent: checks column existence before adding.
+     */
+    public static function add_media_columns() {
+        global $wpdb;
+        $table = $wpdb->prefix . 'cig_company';
+
+        $wpdb->suppress_errors( true );
+
+        $columns = $wpdb->get_results( "DESCRIBE {$table}", ARRAY_A );
+        $existing = array_column( $columns, 'Field' );
+
+        if ( ! in_array( 'logo_url', $existing, true ) ) {
+            $wpdb->query( "ALTER TABLE {$table} ADD COLUMN logo_url VARCHAR(500) NOT NULL DEFAULT '' AFTER director_name" );
+        }
+        if ( ! in_array( 'signature_url', $existing, true ) ) {
+            $wpdb->query( "ALTER TABLE {$table} ADD COLUMN signature_url VARCHAR(500) NOT NULL DEFAULT '' AFTER logo_url" );
         }
 
         $wpdb->suppress_errors( false );
