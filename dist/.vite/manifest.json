@@ -1,0 +1,331 @@
+{
+  "_AppBadge-VxD7XeXN.js": {
+    "file": "assets/AppBadge-VxD7XeXN.js",
+    "name": "AppBadge",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_AppPagination-Cr8dX0T8.js": {
+    "file": "assets/AppPagination-Cr8dX0T8.js",
+    "name": "AppPagination",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_AppTabs-CZyOzZ5s.js": {
+    "file": "assets/AppTabs-CZyOzZ5s.js",
+    "name": "AppTabs",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_EmptyState-C8FHh5jH.js": {
+    "file": "assets/EmptyState-C8FHh5jH.js",
+    "name": "EmptyState",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_InvoiceActions-grl1wNqz.js": {
+    "file": "assets/InvoiceActions-grl1wNqz.js",
+    "name": "InvoiceActions",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_PaymentBadges-3lXxw-Fj.js": {
+    "file": "assets/PaymentBadges-3lXxw-Fj.js",
+    "name": "PaymentBadges",
+    "imports": [
+      "index.html",
+      "_index-DR9ecUg3.js"
+    ]
+  },
+  "_SlidePanel-CbWLJOzE.js": {
+    "file": "assets/SlidePanel-CbWLJOzE.js",
+    "name": "SlidePanel",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_SortableHeader-ClmHyJI1.js": {
+    "file": "assets/SortableHeader-ClmHyJI1.js",
+    "name": "SortableHeader",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_SparklineChart-C9z1maLI.js": {
+    "file": "assets/SparklineChart-C9z1maLI.js",
+    "name": "SparklineChart",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_TableSkeleton-CIcErgnY.js": {
+    "file": "assets/TableSkeleton-CIcErgnY.js",
+    "name": "TableSkeleton",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_auto-DNq-IvLe.js": {
+    "file": "assets/auto-DNq-IvLe.js",
+    "name": "auto",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_index-DR9ecUg3.js": {
+    "file": "assets/index-DR9ecUg3.js",
+    "name": "index"
+  },
+  "_usePagination-BECl66A2.js": {
+    "file": "assets/usePagination-BECl66A2.js",
+    "name": "usePagination",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_useServerList-DR36MhUj.js": {
+    "file": "assets/useServerList-DR36MhUj.js",
+    "name": "useServerList",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_useSortable-Bx5nMWCz.js": {
+    "file": "assets/useSortable-Bx5nMWCz.js",
+    "name": "useSortable",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "index.html": {
+    "file": "assets/index-TEEGEq9t.js",
+    "name": "index",
+    "src": "index.html",
+    "isEntry": true,
+    "dynamicImports": [
+      "src/pages/LoginPage.vue",
+      "src/pages/DashboardPage.vue",
+      "src/pages/ConsultantDashboardPage.vue",
+      "src/pages/InvoiceListPage.vue",
+      "src/pages/InvoiceFormPage.vue",
+      "src/pages/InvoiceViewPage.vue",
+      "src/pages/InvoiceFormPage.vue",
+      "src/pages/WarrantyPage.vue",
+      "src/pages/AccountantPage.vue",
+      "src/pages/StatisticsPage.vue",
+      "src/pages/StockPage.vue",
+      "src/pages/CustomersPage.vue",
+      "src/pages/SettingsPage.vue",
+      "src/pages/UsersPage.vue",
+      "src/pages/NotFoundPage.vue"
+    ]
+  },
+  "src/pages/AccountantPage.vue": {
+    "file": "assets/AccountantPage-CL9RINO5.js",
+    "name": "AccountantPage",
+    "src": "src/pages/AccountantPage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_useServerList-DR36MhUj.js",
+      "_index-DR9ecUg3.js",
+      "_SortableHeader-ClmHyJI1.js",
+      "_AppPagination-Cr8dX0T8.js",
+      "_PaymentBadges-3lXxw-Fj.js",
+      "_InvoiceActions-grl1wNqz.js",
+      "_EmptyState-C8FHh5jH.js",
+      "_TableSkeleton-CIcErgnY.js"
+    ]
+  },
+  "src/pages/ConsultantDashboardPage.vue": {
+    "file": "assets/ConsultantDashboardPage-DdC4pmUz.js",
+    "name": "ConsultantDashboardPage",
+    "src": "src/pages/ConsultantDashboardPage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_index-DR9ecUg3.js",
+      "_InvoiceActions-grl1wNqz.js",
+      "_AppBadge-VxD7XeXN.js",
+      "_SparklineChart-C9z1maLI.js"
+    ]
+  },
+  "src/pages/CustomersPage.vue": {
+    "file": "assets/CustomersPage-BB1qtphp.js",
+    "name": "CustomersPage",
+    "src": "src/pages/CustomersPage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_useServerList-DR36MhUj.js",
+      "_index-DR9ecUg3.js",
+      "_SortableHeader-ClmHyJI1.js",
+      "_AppPagination-Cr8dX0T8.js",
+      "_AppBadge-VxD7XeXN.js",
+      "_SlidePanel-CbWLJOzE.js",
+      "_InvoiceActions-grl1wNqz.js",
+      "_EmptyState-C8FHh5jH.js",
+      "_TableSkeleton-CIcErgnY.js"
+    ]
+  },
+  "src/pages/DashboardPage.vue": {
+    "file": "assets/DashboardPage-C_uDjaxK.js",
+    "name": "DashboardPage",
+    "src": "src/pages/DashboardPage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_usePagination-BECl66A2.js",
+      "_useServerList-DR36MhUj.js",
+      "_index-DR9ecUg3.js",
+      "_auto-DNq-IvLe.js",
+      "_InvoiceActions-grl1wNqz.js",
+      "_AppBadge-VxD7XeXN.js",
+      "_AppPagination-Cr8dX0T8.js",
+      "_SparklineChart-C9z1maLI.js",
+      "_TableSkeleton-CIcErgnY.js"
+    ]
+  },
+  "src/pages/InvoiceFormPage.vue": {
+    "file": "assets/InvoiceFormPage-DBjvyfGJ.js",
+    "name": "InvoiceFormPage",
+    "src": "src/pages/InvoiceFormPage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_index-DR9ecUg3.js",
+      "_AppBadge-VxD7XeXN.js"
+    ]
+  },
+  "src/pages/InvoiceListPage.vue": {
+    "file": "assets/InvoiceListPage-BAItnNmL.js",
+    "name": "InvoiceListPage",
+    "src": "src/pages/InvoiceListPage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_useServerList-DR36MhUj.js",
+      "_index-DR9ecUg3.js",
+      "_SortableHeader-ClmHyJI1.js",
+      "_AppPagination-Cr8dX0T8.js",
+      "_AppBadge-VxD7XeXN.js",
+      "_PaymentBadges-3lXxw-Fj.js",
+      "_InvoiceActions-grl1wNqz.js",
+      "_EmptyState-C8FHh5jH.js",
+      "_TableSkeleton-CIcErgnY.js"
+    ]
+  },
+  "src/pages/InvoiceViewPage.vue": {
+    "file": "assets/InvoiceViewPage-jcqQEgil.js",
+    "name": "InvoiceViewPage",
+    "src": "src/pages/InvoiceViewPage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_index-DR9ecUg3.js",
+      "_AppBadge-VxD7XeXN.js"
+    ]
+  },
+  "src/pages/LoginPage.vue": {
+    "file": "assets/LoginPage-Dq6V6mXp.js",
+    "name": "LoginPage",
+    "src": "src/pages/LoginPage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html"
+    ]
+  },
+  "src/pages/NotFoundPage.vue": {
+    "file": "assets/NotFoundPage-rYRbU6bg.js",
+    "name": "NotFoundPage",
+    "src": "src/pages/NotFoundPage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html"
+    ]
+  },
+  "src/pages/SettingsPage.vue": {
+    "file": "assets/SettingsPage-D5nusQNe.js",
+    "name": "SettingsPage",
+    "src": "src/pages/SettingsPage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_usePagination-BECl66A2.js",
+      "_AppTabs-CZyOzZ5s.js",
+      "_AppPagination-Cr8dX0T8.js"
+    ]
+  },
+  "src/pages/StatisticsPage.vue": {
+    "file": "assets/StatisticsPage-BVJJdySP.js",
+    "name": "StatisticsPage",
+    "src": "src/pages/StatisticsPage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_useSortable-Bx5nMWCz.js",
+      "_usePagination-BECl66A2.js",
+      "_index-DR9ecUg3.js",
+      "_auto-DNq-IvLe.js",
+      "_AppTabs-CZyOzZ5s.js",
+      "_AppBadge-VxD7XeXN.js",
+      "_InvoiceActions-grl1wNqz.js",
+      "_EmptyState-C8FHh5jH.js",
+      "_SortableHeader-ClmHyJI1.js",
+      "_AppPagination-Cr8dX0T8.js"
+    ]
+  },
+  "src/pages/StockPage.vue": {
+    "file": "assets/StockPage-DwnZ-cbN.js",
+    "name": "StockPage",
+    "src": "src/pages/StockPage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_useSortable-Bx5nMWCz.js",
+      "_usePagination-BECl66A2.js",
+      "_SortableHeader-ClmHyJI1.js",
+      "_AppPagination-Cr8dX0T8.js",
+      "_SlidePanel-CbWLJOzE.js",
+      "_TableSkeleton-CIcErgnY.js"
+    ]
+  },
+  "src/pages/UsersPage.vue": {
+    "file": "assets/UsersPage-DTEMefw-.js",
+    "name": "UsersPage",
+    "src": "src/pages/UsersPage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_useSortable-Bx5nMWCz.js",
+      "_usePagination-BECl66A2.js",
+      "_index-DR9ecUg3.js",
+      "_SortableHeader-ClmHyJI1.js",
+      "_AppPagination-Cr8dX0T8.js",
+      "_AppBadge-VxD7XeXN.js",
+      "_SlidePanel-CbWLJOzE.js",
+      "_TableSkeleton-CIcErgnY.js",
+      "_InvoiceActions-grl1wNqz.js",
+      "_EmptyState-C8FHh5jH.js"
+    ]
+  },
+  "src/pages/WarrantyPage.vue": {
+    "file": "assets/WarrantyPage-N5AiD5ah.js",
+    "name": "WarrantyPage",
+    "src": "src/pages/WarrantyPage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_index-DR9ecUg3.js"
+    ]
+  },
+  "style.css": {
+    "file": "assets/style-BvLic2tr.css",
+    "src": "style.css"
+  }
+}
