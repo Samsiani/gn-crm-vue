@@ -6,6 +6,10 @@ namespace Composer\Autoload;
 
 class ComposerStaticInitc0da16294cbdf4dc5d7cbee67ddabad6
 {
+    public static $files = array (
+        'f6d4f6bcee7247df6b777884c3e22f98' => __DIR__ . '/..' . '/yahnis-elsts/plugin-update-checker/load-v5p6.php',
+    );
+
     public static $prefixLengthsPsr4 = array (
         'F' => 
         array (
@@ -35,15 +39,18 @@ class ComposerStaticInitc0da16294cbdf4dc5d7cbee67ddabad6
         'CIG_Delivery' => __DIR__ . '/../..' . '/models/class-cig-delivery.php',
         'CIG_Deposit' => __DIR__ . '/../..' . '/models/class-cig-deposit.php',
         'CIG_Deposits_Controller' => __DIR__ . '/../..' . '/api/class-cig-deposits-controller.php',
+        'CIG_Frontend' => __DIR__ . '/../..' . '/includes/class-cig-frontend.php',
         'CIG_ID_Mapper' => __DIR__ . '/../..' . '/migration/class-cig-id-mapper.php',
         'CIG_Invoice' => __DIR__ . '/../..' . '/models/class-cig-invoice.php',
         'CIG_Invoices_Controller' => __DIR__ . '/../..' . '/api/class-cig-invoices-controller.php',
+        'CIG_KPI_Controller' => __DIR__ . '/../..' . '/api/class-cig-kpi-controller.php',
         'CIG_Loader' => __DIR__ . '/../..' . '/includes/class-cig-loader.php',
         'CIG_Migrator' => __DIR__ . '/../..' . '/migration/class-cig-migrator.php',
         'CIG_Product' => __DIR__ . '/../..' . '/models/class-cig-product.php',
         'CIG_Products_Controller' => __DIR__ . '/../..' . '/api/class-cig-products-controller.php',
         'CIG_RBAC' => __DIR__ . '/../..' . '/middleware/class-cig-rbac.php',
         'CIG_REST_Controller' => __DIR__ . '/../..' . '/api/class-cig-rest-controller.php',
+        'CIG_Updater' => __DIR__ . '/../..' . '/includes/class-cig-updater.php',
         'CIG_User' => __DIR__ . '/../..' . '/models/class-cig-user.php',
         'CIG_Users_Controller' => __DIR__ . '/../..' . '/api/class-cig-users-controller.php',
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',

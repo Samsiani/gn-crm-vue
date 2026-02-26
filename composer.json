@@ -4,7 +4,8 @@
     "type": "wordpress-plugin",
     "require": {
         "php": ">=7.4",
-        "firebase/php-jwt": "^6.0"
+        "firebase/php-jwt": "^6.0",
+        "yahnis-elsts/plugin-update-checker": "^5.0"
     },
     "autoload": {
         "classmap": [

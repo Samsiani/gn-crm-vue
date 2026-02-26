@@ -2,7 +2,7 @@
 /**
  * Plugin Name: CIG Headless API
  * Description: Custom Invoice/Group headless REST API backend for Vue.js SPA
- * Version: 4.2.1
+ * Version: 4.2.2
  * Author: GN Industrial
  * Text Domain: cig-headless
  * Requires PHP: 7.4
@@ -13,22 +13,31 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'CIG_VERSION', '4.2.1' );
+define( 'CIG_VERSION', '4.2.2' );
 define( 'CIG_DB_VERSION', '1.1' );
 define( 'CIG_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'CIG_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'CIG_API_NAMESPACE', 'cig/v1' );
 
-// Autoload Composer dependencies (firebase/php-jwt)
+// Autoload Composer dependencies (firebase/php-jwt, plugin-update-checker)
 if ( file_exists( CIG_PLUGIN_DIR . 'vendor/autoload.php' ) ) {
     require_once CIG_PLUGIN_DIR . 'vendor/autoload.php';
+}
+
+// Auto-update via GitHub Releases (yahnis-elsts/plugin-update-checker v5)
+if ( class_exists( '\YahnisElsts\PluginUpdateChecker\v5\PucFactory' ) ) {
+    $cigUpdateChecker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+        'https://github.com/Samsiani/gn-crm-vue/',
+        __FILE__,
+        'cig-headless'
+    );
+    $cigUpdateChecker->getVcsApi()->enableReleaseAssets();
 }
 
 // Core includes
 require_once CIG_PLUGIN_DIR . 'includes/class-cig-activator.php';
 require_once CIG_PLUGIN_DIR . 'includes/class-cig-loader.php';
 require_once CIG_PLUGIN_DIR . 'includes/class-cig-frontend.php';
-require_once CIG_PLUGIN_DIR . 'includes/class-cig-updater.php';
 
 // Models
 require_once CIG_PLUGIN_DIR . 'models/class-cig-invoice.php';
@@ -71,9 +80,6 @@ add_action( 'plugins_loaded', function() {
 
     $frontend = new CIG_Frontend();
     $frontend->init();
-
-    // Auto-update: checks GitHub Releases for newer versions
-    new CIG_Updater( __FILE__, 'Samsiani', 'gn-crm-vue', CIG_VERSION );
 });
 
 // WP-CLI commands
