@@ -2,7 +2,7 @@
 /**
  * Plugin Name: CIG Headless API
  * Description: Custom Invoice/Group headless REST API backend for Vue.js SPA
- * Version: 4.4.61
+ * Version: 4.4.62
  * Author: GN Industrial
  * Text Domain: cig-headless
  * Requires PHP: 7.4
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'CIG_VERSION', '4.4.61' );
+define( 'CIG_VERSION', '4.4.62' );
 define( 'CIG_DB_VERSION', '1.6' );
 define( 'CIG_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'CIG_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -66,6 +66,11 @@ require_once CIG_PLUGIN_DIR . 'api/class-cig-deliveries-controller.php';
 require_once CIG_PLUGIN_DIR . 'api/class-cig-auth-controller.php';
 require_once CIG_PLUGIN_DIR . 'api/class-cig-kpi-controller.php';
 require_once CIG_PLUGIN_DIR . 'api/class-cig-notifications-controller.php';
+
+// Migration classes (needed by both REST API and WP-CLI)
+require_once CIG_PLUGIN_DIR . 'migration/class-cig-id-mapper.php';
+require_once CIG_PLUGIN_DIR . 'migration/class-cig-data-validator.php';
+require_once CIG_PLUGIN_DIR . 'migration/class-cig-migrator.php';
 require_once CIG_PLUGIN_DIR . 'api/class-cig-migration-controller.php';
 
 // Activation hook
@@ -101,9 +106,6 @@ add_action( 'plugins_loaded', function() {
 
 // WP-CLI commands
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
-    require_once CIG_PLUGIN_DIR . 'migration/class-cig-id-mapper.php';
-    require_once CIG_PLUGIN_DIR . 'migration/class-cig-data-validator.php';
-    require_once CIG_PLUGIN_DIR . 'migration/class-cig-migrator.php';
     require_once CIG_PLUGIN_DIR . 'cli/class-cig-cli-commands.php';
     WP_CLI::add_command( 'cig', 'CIG_CLI_Commands' );
 }
