@@ -206,9 +206,11 @@ class CIG_Frontend {
                 }
                 wp_enqueue_script( 'cig-app', $dist_url . $js_file, [], $js_ver, true );
                 add_filter( 'script_loader_tag', [ $this, 'add_module_type' ], 10, 3 );
+                $company = CIG_Company::get();
                 wp_localize_script( 'cig-app', 'CIG_CONFIG', [
-                    'apiUrl' => '/' . rest_get_url_prefix() . '/' . CIG_API_NAMESPACE,
-                    'nonce'  => wp_create_nonce( 'wp_rest' ),
+                    'apiUrl'          => '/' . rest_get_url_prefix() . '/' . CIG_API_NAMESPACE,
+                    'nonce'           => wp_create_nonce( 'wp_rest' ),
+                    'loginFooterNote' => $company ? ( $company['loginFooterNote'] ?? '' ) : '',
                 ] );
                 return;
             }
@@ -223,9 +225,11 @@ class CIG_Frontend {
         wp_enqueue_style( 'cig-app', $dist_url . 'gn-invoice.css', [], $css_ver );
         wp_enqueue_script( 'cig-app', $dist_url . 'gn-invoice.js', [], $js_ver, true );
         add_filter( 'script_loader_tag', [ $this, 'add_module_type' ], 10, 3 );
+        $company = CIG_Company::get();
         wp_localize_script( 'cig-app', 'CIG_CONFIG', [
-            'apiUrl' => '/' . rest_get_url_prefix() . '/' . CIG_API_NAMESPACE,
-            'nonce'  => wp_create_nonce( 'wp_rest' ),
+            'apiUrl'          => '/' . rest_get_url_prefix() . '/' . CIG_API_NAMESPACE,
+            'nonce'           => wp_create_nonce( 'wp_rest' ),
+            'loginFooterNote' => $company ? ( $company['loginFooterNote'] ?? '' ) : '',
         ] );
     }
 

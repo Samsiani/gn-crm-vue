@@ -58,6 +58,7 @@ class CIG_Company {
             'startingInvoiceNumber' => (int) $row['starting_invoice_number'],
             'invoicePrefix'         => $row['invoice_prefix'],
             'hideWpAdminBar'        => (bool) ( $row['hide_wp_admin_bar'] ?? 0 ),
+            'loginFooterNote'       => $row['login_footer_note'] ?? '',
         ];
     }
 
@@ -82,6 +83,7 @@ class CIG_Company {
             'starting_invoice_number' => [ 'startingInvoiceNumber', 'starting_invoice_number' ],
             'invoice_prefix'          => [ 'invoicePrefix', 'invoice_prefix' ],
             'hide_wp_admin_bar'       => [ 'hideWpAdminBar', 'hide_wp_admin_bar' ],
+            'login_footer_note'       => [ 'loginFooterNote', 'login_footer_note' ],
         ];
 
         foreach ( $map as $db_col => $keys ) {

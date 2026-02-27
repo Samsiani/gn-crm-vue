@@ -211,6 +211,7 @@ class CIG_Activator {
             starting_invoice_number INT NOT NULL DEFAULT 1001,
             invoice_prefix          VARCHAR(10) NOT NULL DEFAULT 'GN',
             hide_wp_admin_bar       TINYINT(1) NOT NULL DEFAULT 0,
+            login_footer_note       TEXT NOT NULL DEFAULT '',
             PRIMARY KEY (id)
         ) $charset;" );
 
@@ -317,6 +318,26 @@ class CIG_Activator {
         if ( ! $exists ) {
             $wpdb->query( "ALTER TABLE {$prefix}products
                 ADD FULLTEXT KEY ft_product_name (name, name_ka, sku)" );
+        }
+
+        $wpdb->suppress_errors( false );
+    }
+
+    /**
+     * Add login_footer_note column to wp_cig_company (DB version 1.6).
+     * Idempotent: checks column existence before adding.
+     */
+    public static function add_login_footer_column() {
+        global $wpdb;
+        $table = $wpdb->prefix . 'cig_company';
+
+        $wpdb->suppress_errors( true );
+
+        $columns  = $wpdb->get_results( "DESCRIBE {$table}", ARRAY_A );
+        $existing = array_column( $columns, 'Field' );
+
+        if ( ! in_array( 'login_footer_note', $existing, true ) ) {
+            $wpdb->query( "ALTER TABLE {$table} ADD COLUMN login_footer_note TEXT NOT NULL DEFAULT ''" );
         }
 
         $wpdb->suppress_errors( false );
