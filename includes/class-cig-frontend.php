@@ -46,6 +46,8 @@ class CIG_Frontend {
         if ( ! $this->enqueue_assets ) {
             return;
         }
+        // Apply dark class synchronously before first paint to prevent flash of light mode.
+        echo '<script>!function(){if("dark"===localStorage.getItem("gn-theme"))document.documentElement.classList.add("dark")}()</script>' . "\n";
         // Fallback: hide skip-links even if remove_action above didn't match the theme's exact function name.
         echo '<style>.wd-skip-links{display:none!important}</style>' . "\n";
     }
