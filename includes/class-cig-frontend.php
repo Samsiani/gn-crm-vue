@@ -94,7 +94,7 @@ class CIG_Frontend {
     public function render_shortcode( $atts ) {
         $this->enqueue_assets = true;
 
-        return '<div id="app"></div>';
+        return '<div id="cig-loader" aria-hidden="true"><div class="cig-ld"><div class="cig-ld-g"><i></i><i></i><i></i><i></i></div><div class="cig-ld-t"><div class="cig-ld-f"></div></div></div><style>#cig-loader{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:#fff;transition:opacity .4s cubic-bezier(.4,0,.2,1),transform .4s cubic-bezier(.4,0,.2,1)}html.dark #cig-loader{background:#0f172a}#cig-loader.out{opacity:0;transform:scale(.94);pointer-events:none}.cig-ld{display:flex;flex-direction:column;align-items:center;gap:22px}.cig-ld-g{display:grid;grid-template-columns:1fr 1fr;gap:7px}.cig-ld-g i{display:block;width:11px;height:11px;border-radius:3px;background:#3b82f6;animation:cig-p 1.4s ease-in-out infinite}.cig-ld-g i:nth-child(1){animation-delay:0s}.cig-ld-g i:nth-child(2){animation-delay:.12s}.cig-ld-g i:nth-child(3){animation-delay:.12s}.cig-ld-g i:nth-child(4){animation-delay:.24s}@keyframes cig-p{0%,100%{transform:scale(.45);opacity:.2}50%{transform:scale(1.15);opacity:1}}.cig-ld-t{width:72px;height:2px;border-radius:9px;background:rgba(59,130,246,.13);overflow:hidden}.cig-ld-f{height:100%;width:44%;border-radius:9px;background:#3b82f6;animation:cig-s 1.5s ease-in-out infinite}@keyframes cig-s{0%{transform:translateX(-220%)}100%{transform:translateX(380%)}}</style></div><div id="app"></div>';
     }
 
     /**
