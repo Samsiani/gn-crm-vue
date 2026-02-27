@@ -398,6 +398,35 @@ class CIG_Product {
         ];
     }
 
+    /**
+     * Atomically adjust a product's physical stock by $delta.
+     * Positive delta = restore to stock; negative = consume from stock.
+     */
+    public static function adjust_stock( int $id, int $delta ) {
+        if ( $delta === 0 || ! $id ) return;
+
+        if ( self::use_woocommerce() ) {
+            if ( $delta > 0 ) {
+                wc_update_product_stock( $id, $delta, 'increase' );
+            } else {
+                wc_update_product_stock( $id, abs( $delta ), 'decrease' );
+            }
+            // Ensure manage_stock is on (idempotent, cheap)
+            $wc = wc_get_product( $id );
+            if ( $wc && ! $wc->get_manage_stock() ) {
+                $wc->set_manage_stock( true );
+                $wc->save();
+            }
+        } else {
+            global $wpdb;
+            $wpdb->query( $wpdb->prepare(
+                "UPDATE {$wpdb->prefix}cig_products
+                 SET stock = GREATEST(0, stock + %d) WHERE id = %d",
+                $delta, $id
+            ));
+        }
+    }
+
     private static function extract_fields( $data ) {
         $fields = [];
         $map = [

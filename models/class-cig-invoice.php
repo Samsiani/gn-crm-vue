@@ -266,6 +266,12 @@ class CIG_Invoice {
         // Insert items
         if ( ! empty( $data['items'] ) ) {
             self::save_items( $invoice_id, $data['items'] );
+            // Stock sync: consume stock for sold items on new invoices.
+            // Fictive invoices use item_status='none', so sold_qty_by_product() returns []
+            // naturally — the explicit guard makes intent clear.
+            if ( ( $data['status'] ?? '' ) !== 'fictive' ) {
+                self::sync_stock( [], $data['items'] );
+            }
         }
 
         // Insert payments
@@ -291,13 +297,28 @@ class CIG_Invoice {
             return new WP_Error( 'cig_not_found', 'Invoice not found.', [ 'status' => 404 ] );
         }
 
+        // Capture old state for stock delta (before any mutations)
+        $old_status = (string) ( $existing['status'] ?? '' );
+        $new_status = isset( $data['status'] ) ? (string) $data['status'] : $old_status;
+
         $invoice_data = self::extract_invoice_fields( $data );
         $wpdb->update( self::table(), $invoice_data, [ 'id' => $id ] );
 
         // Replace items if provided
         if ( isset( $data['items'] ) ) {
+            $old_items = $existing['items'] ?? [];
+
             $wpdb->delete( self::items_table(), [ 'invoice_id' => $id ] );
             self::save_items( $id, $data['items'] );
+
+            // Stock delta — handles all four status transitions:
+            //   fictive→fictive : sync_stock([],[]) → delta 0          ✓
+            //   fictive→standard: sync_stock([],new) → new sold applied ✓
+            //   standard→fictive: sync_stock(old,[]) → old sold restored ✓
+            //   standard→standard: sync_stock(old,new) → normal delta   ✓
+            $old_for_delta = ( $old_status === 'fictive' ) ? [] : $old_items;
+            $new_for_delta = ( $new_status === 'fictive' ) ? [] : $data['items'];
+            self::sync_stock( $old_for_delta, $new_for_delta );
         }
 
         // Replace payments if provided
@@ -318,6 +339,20 @@ class CIG_Invoice {
      */
     public static function delete( $id ) {
         global $wpdb;
+
+        // Restore stock for any sold items before cascade delete removes them
+        $inv_status = $wpdb->get_var( $wpdb->prepare(
+            "SELECT status FROM " . self::table() . " WHERE id = %d", $id
+        ) );
+
+        if ( $inv_status !== 'fictive' ) {
+            $old_items = $wpdb->get_results(
+                $wpdb->prepare( "SELECT * FROM " . self::items_table() . " WHERE invoice_id = %d", $id ),
+                ARRAY_A
+            );
+            self::sync_stock( $old_items, [] );
+        }
+
         $result = $wpdb->delete( self::table(), [ 'id' => $id ] );
         self::clear_kpi_cache();
         return $result;
@@ -866,6 +901,36 @@ class CIG_Invoice {
         ];
         set_transient( $cache_key, $data, 5 * MINUTE_IN_SECONDS );
         return $data;
+    }
+
+    /**
+     * Returns [ product_id => total_sold_qty ] for items with item_status = 'sold'.
+     * Accepts both snake_case (from DB rows) and camelCase (from API payload / hydrate()).
+     */
+    private static function sold_qty_by_product( array $items ): array {
+        $map = [];
+        foreach ( $items as $item ) {
+            $pid    = (int)( $item['product_id'] ?? $item['productId'] ?? 0 );
+            $status = $item['item_status']  ?? $item['itemStatus']  ?? '';
+            if ( $pid && $status === 'sold' ) {
+                $map[$pid] = ( $map[$pid] ?? 0 ) + (int) round( (float)( $item['qty'] ?? 1 ) );
+            }
+        }
+        return $map;
+    }
+
+    /**
+     * Compare old vs new item sets; apply stock delta per product.
+     * Delta = old_sold_qty − new_sold_qty (positive = restore, negative = consume).
+     */
+    private static function sync_stock( array $old_items, array $new_items ): void {
+        $old     = self::sold_qty_by_product( $old_items );
+        $new     = self::sold_qty_by_product( $new_items );
+        $all_pids = array_unique( array_merge( array_keys($old), array_keys($new) ) );
+        foreach ( $all_pids as $pid ) {
+            $delta = ( $old[$pid] ?? 0 ) - ( $new[$pid] ?? 0 );
+            if ( $delta !== 0 ) CIG_Product::adjust_stock( $pid, $delta );
+        }
     }
 
     /**
