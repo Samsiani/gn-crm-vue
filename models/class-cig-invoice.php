@@ -193,7 +193,11 @@ class CIG_Invoice {
         $offset = ( max( 1, (int) $args['page'] ) - 1 ) * (int) $args['per_page'];
         $limit  = (int) $args['per_page'];
 
-        $query = "SELECT i.* FROM {$table} i {$join_sql} WHERE {$where_sql} ORDER BY i.{$sort} {$order} LIMIT %d OFFSET %d";
+        // Secondary sort by i.id DESC ensures deterministic order when the primary
+        // field ties (e.g. created_at is DATE-only so multiple invoices share the
+        // same day value — highest ID = most recently inserted).
+        $tiebreak = ( $sort === 'id' ) ? '' : ', i.id DESC';
+        $query = "SELECT i.* FROM {$table} i {$join_sql} WHERE {$where_sql} ORDER BY i.{$sort} {$order}{$tiebreak} LIMIT %d OFFSET %d";
         $query_params = array_merge( $params, [ $limit, $offset ] );
         $rows = $wpdb->get_results( $wpdb->prepare( $query, ...$query_params ), ARRAY_A );
 
