@@ -185,8 +185,10 @@ class CIG_Auth_Controller extends CIG_REST_Controller {
 
     /**
      * POST /auth/logout
+     * Clears the WordPress auth cookie so a subsequent /auth/session call returns 401.
      */
     public function logout( $request ) {
+        wp_clear_auth_cookie();
         return rest_ensure_response( [ 'success' => true ] );
     }
 
