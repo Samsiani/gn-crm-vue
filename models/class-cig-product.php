@@ -87,8 +87,31 @@ class CIG_Product {
             'return'   => 'objects',
         ];
 
+        // When searching, use SQL to match title OR SKU — WC native 's' only searches title.
         if ( ! empty( $args['search'] ) ) {
-            $wc_args['s'] = $args['search'];
+            global $wpdb;
+            $like = '%' . $wpdb->esc_like( $args['search'] ) . '%';
+            $matching_ids = $wpdb->get_col( $wpdb->prepare(
+                "SELECT DISTINCT p.ID
+                 FROM {$wpdb->posts} p
+                 LEFT JOIN {$wpdb->postmeta} sku_m
+                        ON p.ID = sku_m.post_id AND sku_m.meta_key = '_sku'
+                 WHERE p.post_type   = 'product'
+                   AND p.post_status = 'publish'
+                   AND (p.post_title LIKE %s OR sku_m.meta_value LIKE %s)",
+                $like, $like
+            ) );
+
+            if ( empty( $matching_ids ) ) {
+                return [
+                    'data' => [], 'total' => 0,
+                    'page' => (int) $args['page'], 'per_page' => (int) $args['per_page'], 'pages' => 0,
+                ];
+            }
+
+            $wc_args['include'] = array_map( 'intval', $matching_ids );
+            // Total is the full set of matching IDs (WC will paginate within that set)
+            $total = count( $matching_ids );
         }
 
         if ( ! empty( $args['category'] ) ) {
@@ -105,14 +128,16 @@ class CIG_Product {
             update_object_term_cache( $ids, 'product' );
         }
 
-        // Get total count via SQL COUNT (avoids loading all IDs into PHP memory)
-        $count_args            = $wc_args;
-        $count_args['paginate'] = true;
-        $count_args['limit']   = 1;
-        $count_args['page']    = 1;
-        unset( $count_args['return'] );
-        $count_result = wc_get_products( $count_args );
-        $total        = $count_result->total;
+        // Total count: already set above when searching; otherwise query WC.
+        if ( ! isset( $total ) ) {
+            $count_args             = $wc_args;
+            $count_args['paginate'] = true;
+            $count_args['limit']    = 1;
+            $count_args['page']     = 1;
+            unset( $count_args['return'] );
+            $count_result = wc_get_products( $count_args );
+            $total        = $count_result->total;
+        }
 
         $per_page = max( 1, (int) $args['per_page'] );
 
