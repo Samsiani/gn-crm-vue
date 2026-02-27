@@ -29,7 +29,10 @@ class CIG_Product {
     private static function find_wc( $id ) {
         $wc = wc_get_product( $id );
         if ( ! $wc || ! $wc->exists() ) return null;
-        return self::hydrate_wc( $wc );
+        $product = self::hydrate_wc( $wc );
+        $counts  = self::batch_reserved_counts( [ $product['id'] ] );
+        $product['reserved'] = $counts[ $product['id'] ] ?? 0;
+        return $product;
     }
 
     private static function find_table( $id ) {
@@ -39,7 +42,10 @@ class CIG_Product {
             ARRAY_A
         );
         if ( ! $row ) return null;
-        return self::hydrate( $row );
+        $product = self::hydrate( $row );
+        $counts  = self::batch_reserved_counts( [ $product['id'] ] );
+        $product['reserved'] = $counts[ $product['id'] ] ?? 0;
+        return $product;
     }
 
     // ── List ──────────────────────────────────────
@@ -110,8 +116,20 @@ class CIG_Product {
 
         $per_page = max( 1, (int) $args['per_page'] );
 
+        $hydrated = array_map( [ __CLASS__, 'hydrate_wc' ], $products );
+
+        // Overlay real reserved counts from invoice items (overrides stale meta).
+        if ( ! empty( $hydrated ) ) {
+            $ids    = array_column( $hydrated, 'id' );
+            $counts = self::batch_reserved_counts( $ids );
+            foreach ( $hydrated as &$p ) {
+                $p['reserved'] = $counts[ $p['id'] ] ?? 0;
+            }
+            unset( $p );
+        }
+
         return [
-            'data'     => array_map( [ __CLASS__, 'hydrate_wc' ], $products ),
+            'data'     => $hydrated,
             'total'    => $total,
             'page'     => (int) $args['page'],
             'per_page' => $per_page,
@@ -170,6 +188,16 @@ class CIG_Product {
         $rows = $wpdb->get_results( $wpdb->prepare( $query, ...$query_params ), ARRAY_A );
 
         $products = array_map( [ __CLASS__, 'hydrate' ], $rows );
+
+        // Overlay real reserved counts from invoice items (overrides stale column value).
+        if ( ! empty( $products ) ) {
+            $ids    = array_column( $products, 'id' );
+            $counts = self::batch_reserved_counts( $ids );
+            foreach ( $products as &$p ) {
+                $p['reserved'] = $counts[ $p['id'] ] ?? 0;
+            }
+            unset( $p );
+        }
 
         return [
             'data'     => $products,
@@ -271,6 +299,45 @@ class CIG_Product {
     }
 
     // ── Hydration ─────────────────────────────────
+
+    /**
+     * Return a map of product_id => reserved_qty by counting invoice items
+     * that are currently in 'reserved' status across all standard invoices.
+     * One query for any number of products.
+     *
+     * @param  int[] $product_ids
+     * @return array<int,int>
+     */
+    private static function batch_reserved_counts( array $product_ids ) {
+        if ( empty( $product_ids ) ) {
+            return [];
+        }
+
+        global $wpdb;
+        $items_table = $wpdb->prefix . 'cig_invoice_items';
+        $inv_table   = $wpdb->prefix . 'cig_invoices';
+        $placeholders = implode( ',', array_fill( 0, count( $product_ids ), '%d' ) );
+
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT ii.product_id, COALESCE(SUM(ii.qty), 0) AS reserved_qty
+                 FROM {$items_table} ii
+                 INNER JOIN {$inv_table} i ON ii.invoice_id = i.id
+                 WHERE ii.item_status = 'reserved'
+                   AND i.status = 'standard'
+                   AND ii.product_id IN ({$placeholders})
+                 GROUP BY ii.product_id",
+                ...$product_ids
+            ),
+            ARRAY_A
+        );
+
+        $map = [];
+        foreach ( $rows as $row ) {
+            $map[ (int) $row['product_id'] ] = (int) $row['reserved_qty'];
+        }
+        return $map;
+    }
 
     /**
      * Hydrate a WooCommerce product object into the CIG format.
