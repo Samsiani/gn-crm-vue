@@ -1,0 +1,1 @@
+import{u as n}from"./useServerList-D_LA8D95.js";import{H as u}from"./index-B36lAY53.js";function m(r,{perPage:s=20,debounceMs:t=500,initialFilters:a={}}={}){const{loading:i,...e}=n(r,{perPage:s,debounceMs:t,initialFilters:{search:"",...a}}),o=u({get:()=>e.filters.search??"",set:c=>{e.filters.search=c}});return{...e,isLoading:i,searchQuery:o}}export{m as u};

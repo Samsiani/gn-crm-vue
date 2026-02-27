@@ -1,0 +1,1 @@
+import{$ as e}from"./index-B36lAY53.js";const a={getDashboard(t={}){return e.get("/kpi/dashboard",t)},getOtherAccumulated(){return e.get("/kpi/other-accumulated")},getStatistics(t={}){return e.get("/kpi/statistics",t)}};export{a as k};

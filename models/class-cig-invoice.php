@@ -24,8 +24,15 @@ class CIG_Invoice {
      */
     public static function find( $id ) {
         global $wpdb;
+        $users_table = $wpdb->prefix . 'cig_users';
         $row = $wpdb->get_row(
-            $wpdb->prepare( "SELECT * FROM " . self::table() . " WHERE id = %d", $id ),
+            $wpdb->prepare(
+                "SELECT i.*, u.name AS author_name, u.avatar AS author_avatar
+                 FROM " . self::table() . " i
+                 LEFT JOIN {$users_table} u ON u.id = i.author_id
+                 WHERE i.id = %d",
+                $id
+            ),
             ARRAY_A
         );
         if ( ! $row ) return null;
@@ -180,7 +187,8 @@ class CIG_Invoice {
         $sort = in_array( $args['sort'], $allowed_sorts, true ) ? $args['sort'] : 'created_at';
         $order = strtoupper( $args['order'] ) === 'ASC' ? 'ASC' : 'DESC';
 
-        $join_sql = "LEFT JOIN {$customers_table} c ON c.id = i.customer_id";
+        $users_table = $wpdb->prefix . 'cig_users';
+        $join_sql = "LEFT JOIN {$customers_table} c ON c.id = i.customer_id LEFT JOIN {$users_table} u ON u.id = i.author_id";
 
         // Count
         $count_sql = "SELECT COUNT(*) FROM {$table} i {$join_sql} WHERE {$where_sql}";
@@ -197,7 +205,7 @@ class CIG_Invoice {
         // field ties (e.g. created_at is DATE-only so multiple invoices share the
         // same day value — highest ID = most recently inserted).
         $tiebreak = ( $sort === 'id' ) ? '' : ', i.id DESC';
-        $query = "SELECT i.* FROM {$table} i {$join_sql} WHERE {$where_sql} ORDER BY i.{$sort} {$order}{$tiebreak} LIMIT %d OFFSET %d";
+        $query = "SELECT i.*, u.name AS author_name, u.avatar AS author_avatar FROM {$table} i {$join_sql} WHERE {$where_sql} ORDER BY i.{$sort} {$order}{$tiebreak} LIMIT %d OFFSET %d";
         $query_params = array_merge( $params, [ $limit, $offset ] );
         $rows = $wpdb->get_results( $wpdb->prepare( $query, ...$query_params ), ARRAY_A );
 
@@ -779,16 +787,22 @@ class CIG_Invoice {
         }
 
         // ── 4. Top users (standard, date-filtered) ────────────────────────────
+        $user_t = $wpdb->prefix . 'cig_users';
         $user_rows = $wpdb->get_results(
-            "SELECT i.author_id, COUNT(*) AS invoice_count, COALESCE(SUM(i.paid_amount), 0) AS revenue
+            "SELECT i.author_id, u.name, u.name_en, u.avatar,
+                    COUNT(*) AS invoice_count, COALESCE(SUM(i.paid_amount), 0) AS revenue
              FROM {$table} i
+             LEFT JOIN {$user_t} u ON u.id = i.author_id
              WHERE i.status = 'standard' AND i.author_id IS NOT NULL {$inv_date}
-             GROUP BY i.author_id
+             GROUP BY i.author_id, u.name, u.name_en, u.avatar
              ORDER BY revenue DESC",
             ARRAY_A
         );
         $top_users = array_map( fn( $r ) => [
             'authorId'     => (int) $r['author_id'],
+            'name'         => $r['name'] ?? '',
+            'nameEn'       => $r['name_en'] ?? '',
+            'avatar'       => $r['avatar'] ?? '',
             'invoiceCount' => (int) $r['invoice_count'],
             'revenue'      => (float) $r['revenue'],
         ], $user_rows );
@@ -903,19 +917,24 @@ class CIG_Invoice {
         ], $prod_rows );
 
         // ── 10. Customer insights (standard, date-filtered) ───────────────────
+        $cust_t2 = $wpdb->prefix . 'cig_customers';
         $cust_rows = $wpdb->get_results(
             "SELECT
-                i.customer_id,
+                i.customer_id, c.name, c.name_en, c.tax_id,
                 COALESCE(SUM(i.paid_amount), 0) AS total_spent,
                 COUNT(*) AS invoice_count,
                 COALESCE(SUM(GREATEST(0, i.total_amount - i.paid_amount)), 0) AS outstanding
              FROM {$table} i
+             LEFT JOIN {$cust_t2} c ON c.id = i.customer_id
              WHERE i.status = 'standard' AND i.customer_id IS NOT NULL {$inv_date}
-             GROUP BY i.customer_id",
+             GROUP BY i.customer_id, c.name, c.name_en, c.tax_id",
             ARRAY_A
         );
         $customers = array_map( fn( $r ) => [
             'customerId'   => (int)   $r['customer_id'],
+            'name'         => $r['name'] ?? '',
+            'nameEn'       => $r['name_en'] ?? '',
+            'taxId'        => $r['tax_id'] ?? '',
             'totalSpent'   => (float) $r['total_spent'],
             'invoiceCount' => (int)   $r['invoice_count'],
             'outstanding'  => (float) $r['outstanding'],
@@ -1064,6 +1083,8 @@ class CIG_Invoice {
             'soldDate'          => $row['sold_date'],
             'saleDate'          => $row['sale_date'],
             'authorId'          => $row['author_id'] ? (int) $row['author_id'] : null,
+            'authorName'        => $row['author_name'] ?? null,
+            'authorAvatar'      => $row['author_avatar'] ?? null,
             'buyerName'         => $row['buyer_name'],
             'buyerTaxId'        => $row['buyer_tax_id'],
             'buyerPhone'        => $row['buyer_phone'],
