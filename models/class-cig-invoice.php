@@ -148,13 +148,14 @@ class CIG_Invoice {
             $where[] = '(i.is_rs_uploaded = 0 OR i.is_credit_checked = 0 OR i.is_receipt_checked = 0 OR i.is_corrected = 0)';
         }
 
-        // Individual flag filters
+        // Individual flag filters (positive: show invoices that HAVE the flag checked)
         if ( ! empty( $args['flags'] ) ) {
             switch ( $args['flags'] ) {
-                case 'rs_pending':        $where[] = 'i.is_rs_uploaded = 0';    break;
-                case 'credit_pending':    $where[] = 'i.is_credit_checked = 0'; break;
-                case 'receipt_pending':   $where[] = 'i.is_receipt_checked = 0'; break;
-                case 'corrected_pending': $where[] = 'i.is_corrected = 0';      break;
+                case 'rs_uploaded':     $where[] = 'i.is_rs_uploaded = 1';    break;
+                case 'credit_checked':  $where[] = 'i.is_credit_checked = 1'; break;
+                case 'receipt_checked': $where[] = 'i.is_receipt_checked = 1'; break;
+                case 'corrected':       $where[] = 'i.is_corrected = 1';      break;
+                case 'no_flags':        $where[] = '(i.is_rs_uploaded = 0 AND i.is_credit_checked = 0 AND i.is_receipt_checked = 0 AND i.is_corrected = 0)'; break;
             }
         }
 
