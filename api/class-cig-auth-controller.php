@@ -78,9 +78,17 @@ class CIG_Auth_Controller extends CIG_REST_Controller {
             );
         }
 
-        return rest_ensure_response( [
-            'user' => $cig_user,
-        ] );
+        // Issue a fresh JWT so the frontend can replace any stale token.
+        // This is critical when a different WP user logs in on another tab:
+        // the frontend calls this endpoint with the nonce (not the old JWT),
+        // receives the correct user + a new JWT, and replaces the stale one.
+        $token = CIG_Auth_Middleware::generate_token( $cig_user );
+        $response = [ 'user' => $cig_user ];
+        if ( $token ) {
+            $response['token'] = $token;
+        }
+
+        return rest_ensure_response( $response );
     }
 
     /**
