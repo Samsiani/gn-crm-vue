@@ -63,6 +63,7 @@ class CIG_Invoices_Controller extends CIG_REST_Controller {
             'date_to'        => sanitize_text_field( $request->get_param( 'date_to' ) ?: '' ),
             'customer_id'    => $request->get_param( 'customer_id' ) ? (int) $request->get_param( 'customer_id' ) : null,
             'completion'     => sanitize_text_field( $request->get_param( 'completion' ) ?: '' ),
+            'flags'          => sanitize_text_field( $request->get_param( 'flags' ) ?: '' ),
             'lean'           => (bool) $request->get_param( 'lean' ),
         ] );
 
@@ -71,8 +72,9 @@ class CIG_Invoices_Controller extends CIG_REST_Controller {
             $args['sort'] = $this->camel_to_snake( $args['sort'] );
         }
 
-        // Sales role: auto-filter to own invoices only
-        if ( CIG_RBAC::user_is_consultant( $user ) ) {
+        // Sales role: auto-filter to own invoices only.
+        // Accountant can see all invoices (their job is to review all).
+        if ( $user['role'] === 'sales' ) {
             $args['author_id'] = $user['id'];
         } elseif ( $request->get_param( 'author_id' ) ) {
             $args['author_id'] = (int) $request->get_param( 'author_id' );

@@ -47,6 +47,7 @@ class CIG_Invoice {
             'date_from'      => '',
             'date_to'        => '',
             'completion'     => '',
+            'flags'          => '',
             'author_id'      => null,
             'customer_id'    => null,
             'lean'           => false,
@@ -140,11 +141,21 @@ class CIG_Invoice {
             $params[] = $args['customer_id'];
         }
 
-        // Completion filter (accountant flags)
+        // Completion filter (accountant flags — all-or-nothing)
         if ( $args['completion'] === 'completed' ) {
             $where[] = '(i.is_rs_uploaded = 1 AND i.is_credit_checked = 1 AND i.is_receipt_checked = 1 AND i.is_corrected = 1)';
         } elseif ( $args['completion'] === 'incomplete' ) {
             $where[] = '(i.is_rs_uploaded = 0 OR i.is_credit_checked = 0 OR i.is_receipt_checked = 0 OR i.is_corrected = 0)';
+        }
+
+        // Individual flag filters
+        if ( ! empty( $args['flags'] ) ) {
+            switch ( $args['flags'] ) {
+                case 'rs_pending':        $where[] = 'i.is_rs_uploaded = 0';    break;
+                case 'credit_pending':    $where[] = 'i.is_credit_checked = 0'; break;
+                case 'receipt_pending':   $where[] = 'i.is_receipt_checked = 0'; break;
+                case 'corrected_pending': $where[] = 'i.is_corrected = 0';      break;
+            }
         }
 
         // Search (invoice number, buyer name/tax, customer name in both languages)
