@@ -102,10 +102,16 @@ class CIG_Data_Validator {
         );
         $this->add_result( 'Sold (was completed)', $sold > 0, '> 0', $sold );
 
-        $active = (int) $wpdb->get_var(
+        $reserved = (int) $wpdb->get_var(
+            "SELECT COUNT(*) FROM {$prefix}invoices WHERE lifecycle_status = 'reserved'"
+        );
+        $this->add_result( 'Reserved (was reserved)', $reserved >= 0, 'N/A', $reserved );
+
+        // Check no invoices are stuck with legacy 'active' value (indicates unfixed migration)
+        $active_stuck = (int) $wpdb->get_var(
             "SELECT COUNT(*) FROM {$prefix}invoices WHERE lifecycle_status = 'active'"
         );
-        $this->add_result( 'Active (was reserved)', true, 'N/A', $active );
+        $this->add_result( 'No stuck active lifecycle', $active_stuck === 0, 0, $active_stuck );
 
         $draft = (int) $wpdb->get_var(
             "SELECT COUNT(*) FROM {$prefix}invoices WHERE lifecycle_status = 'draft'"
