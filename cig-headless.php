@@ -2,7 +2,7 @@
 /**
  * Plugin Name: CIG Headless API
  * Description: Custom Invoice/Group headless REST API backend for Vue.js SPA
- * Version: 4.4.53
+ * Version: 4.4.54
  * Author: GN Industrial
  * Text Domain: cig-headless
  * Requires PHP: 7.4
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'CIG_VERSION', '4.4.53' );
+define( 'CIG_VERSION', '4.4.54' );
 define( 'CIG_DB_VERSION', '1.6' );
 define( 'CIG_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'CIG_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
