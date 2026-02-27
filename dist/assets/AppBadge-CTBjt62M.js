@@ -1,1 +1,0 @@
-import{o as e,c as t,t as o,I as l}from"./index-BwDwHZMC.js";const c={__name:"AppBadge",props:{label:String,color:{type:String,default:"neutral"},dot:Boolean},setup(a){return(n,r)=>(e(),t("span",{class:l(["badge",`badge--${a.color}`,{"badge--dot":a.dot}])},o(a.label),3))}};export{c as _};

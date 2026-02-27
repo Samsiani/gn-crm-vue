@@ -40,16 +40,34 @@ class CIG_Frontend {
 
     /**
      * Inject CSS/JS overrides into <head> on CIG pages.
-     * Hides theme-injected elements that can't be removed via dequeue.
+     * Also outputs loader CSS and the dark-mode script here so both are
+     * available before the first paint.
      */
     public function inject_page_overrides() {
         if ( ! $this->enqueue_assets ) {
             return;
         }
-        // Apply dark class synchronously before first paint to prevent flash of light mode.
+
+        // 1. Dark mode — synchronous, before first paint.
         echo '<script>!function(){if("dark"===localStorage.getItem("gn-theme"))document.documentElement.classList.add("dark")}()</script>' . "\n";
-        // Fallback: hide skip-links even if remove_action above didn't match the theme's exact function name.
-        echo '<style>.wd-skip-links{display:none!important}</style>' . "\n";
+
+        // 2. Full-page loader CSS — in <head> so it applies the moment the div appears.
+        echo '<style>'
+            . '#cig-loader{position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;background:#fff;transition:opacity .45s cubic-bezier(.4,0,.2,1),transform .45s cubic-bezier(.4,0,.2,1)}'
+            . 'html.dark #cig-loader{background:#0f172a}'
+            . '#cig-loader.out{opacity:0;transform:scale(.94);pointer-events:none}'
+            . '.cig-ld-g{display:grid;grid-template-columns:1fr 1fr;gap:7px}'
+            . '.cig-ld-g i{display:block;width:11px;height:11px;border-radius:3px;background:#3b82f6;animation:cig-p 1.4s ease-in-out infinite}'
+            . '.cig-ld-g i:nth-child(1){animation-delay:0s}'
+            . '.cig-ld-g i:nth-child(2){animation-delay:.12s}'
+            . '.cig-ld-g i:nth-child(3){animation-delay:.12s}'
+            . '.cig-ld-g i:nth-child(4){animation-delay:.24s}'
+            . '@keyframes cig-p{0%,100%{transform:scale(.45);opacity:.2}50%{transform:scale(1.15);opacity:1}}'
+            . '.cig-ld-t{width:72px;height:2px;border-radius:9px;background:rgba(59,130,246,.13);overflow:hidden}'
+            . '.cig-ld-f{height:100%;width:44%;border-radius:9px;background:#3b82f6;animation:cig-s 1.5s ease-in-out infinite}'
+            . '@keyframes cig-s{0%{transform:translateX(-220%)}100%{transform:translateX(380%)}}'
+            . '.wd-skip-links{display:none!important}'
+            . '</style>' . "\n";
     }
 
     /**
@@ -94,7 +112,18 @@ class CIG_Frontend {
     public function render_shortcode( $atts ) {
         $this->enqueue_assets = true;
 
-        return '<div id="cig-loader" aria-hidden="true"><div class="cig-ld"><div class="cig-ld-g"><i></i><i></i><i></i><i></i></div><div class="cig-ld-t"><div class="cig-ld-f"></div></div></div><style>#cig-loader{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:#fff;transition:opacity .4s cubic-bezier(.4,0,.2,1),transform .4s cubic-bezier(.4,0,.2,1)}html.dark #cig-loader{background:#0f172a}#cig-loader.out{opacity:0;transform:scale(.94);pointer-events:none}.cig-ld{display:flex;flex-direction:column;align-items:center;gap:22px}.cig-ld-g{display:grid;grid-template-columns:1fr 1fr;gap:7px}.cig-ld-g i{display:block;width:11px;height:11px;border-radius:3px;background:#3b82f6;animation:cig-p 1.4s ease-in-out infinite}.cig-ld-g i:nth-child(1){animation-delay:0s}.cig-ld-g i:nth-child(2){animation-delay:.12s}.cig-ld-g i:nth-child(3){animation-delay:.12s}.cig-ld-g i:nth-child(4){animation-delay:.24s}@keyframes cig-p{0%,100%{transform:scale(.45);opacity:.2}50%{transform:scale(1.15);opacity:1}}.cig-ld-t{width:72px;height:2px;border-radius:9px;background:rgba(59,130,246,.13);overflow:hidden}.cig-ld-f{height:100%;width:44%;border-radius:9px;background:#3b82f6;animation:cig-s 1.5s ease-in-out infinite}@keyframes cig-s{0%{transform:translateX(-220%)}100%{transform:translateX(380%)}}</style></div><div id="app"></div>';
+        // The loader is created via JS so it becomes a direct child of <body>,
+        // sitting above all theme markup regardless of where the shortcode is placed.
+        // CSS is already output in inject_page_overrides() via wp_head.
+        return '<script>!function(){'
+            . 'if(document.getElementById("cig-loader"))return;'
+            . 'var e=document.createElement("div");'
+            . 'e.id="cig-loader";'
+            . 'e.setAttribute("aria-hidden","true");'
+            . 'e.innerHTML=\'<div class="cig-ld-g"><i></i><i></i><i></i><i></i></div><div class="cig-ld-t"><div class="cig-ld-f"></div></div>\';'
+            . 'document.body.prepend(e);'
+            . '}()</script>'
+            . '<div id="app"></div>';
     }
 
     /**
