@@ -67,10 +67,10 @@ class CIG_Migration_Controller extends CIG_REST_Controller {
         global $wpdb;
         $prefix = $wpdb->prefix . 'cig_';
 
-        // Legacy CPT counts
-        $legacy_invoices  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'cig_invoice' AND post_status = 'publish'" );
-        $legacy_customers = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'cig_customer' AND post_status = 'publish'" );
-        $legacy_deposits  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'cig_deposit' AND post_status = 'publish'" );
+        // Legacy CPT counts — include all non-trashed posts (old plugin may use custom statuses)
+        $legacy_invoices  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'cig_invoice'  AND post_status NOT IN ('trash', 'auto-draft')" );
+        $legacy_customers = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'cig_customer' AND post_status NOT IN ('trash', 'auto-draft')" );
+        $legacy_deposits  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'cig_deposit'  AND post_status NOT IN ('trash', 'auto-draft')" );
 
         // Check whether postmeta items exist
         $has_postmeta_items = (bool) $wpdb->get_var(

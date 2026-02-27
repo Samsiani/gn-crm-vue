@@ -26,10 +26,10 @@ class CIG_Data_Validator {
         global $wpdb;
         $prefix = $wpdb->prefix . 'cig_';
 
-        // Invoice count — if legacy CPT = 0 (not registered), pass when current > 0
+        // Invoice count — include all non-trashed CPT posts (old plugin may use custom statuses)
         $count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$prefix}invoices" );
         $legacy_count = (int) $wpdb->get_var(
-            "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'cig_invoice' AND post_status = 'publish'"
+            "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'cig_invoice' AND post_status NOT IN ('trash', 'auto-draft')"
         );
         if ( $legacy_count === 0 ) {
             $this->add_result( 'Invoice count', $count > 0, '> 0', $count );
@@ -41,10 +41,10 @@ class CIG_Data_Validator {
         $count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$prefix}customers" );
         $this->add_result( 'Customer count', $count > 0, '> 0', $count );
 
-        // Deposit count — if legacy CPT = 0 (not registered), it's informational
+        // Deposit count — include all non-trashed CPT posts
         $count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$prefix}deposits" );
         $legacy_count = (int) $wpdb->get_var(
-            "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'cig_deposit' AND post_status = 'publish'"
+            "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'cig_deposit' AND post_status NOT IN ('trash', 'auto-draft')"
         );
         if ( $legacy_count === 0 ) {
             $this->add_result( 'Deposit count', true, 'N/A', $count );

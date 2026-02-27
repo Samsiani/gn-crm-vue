@@ -239,7 +239,7 @@ class CIG_Migrator {
         // Step 2: Import customer CPT records (post_type = 'cig_customer')
         $customer_posts = $wpdb->get_results(
             "SELECT ID, post_title FROM {$wpdb->posts}
-             WHERE post_type = 'cig_customer' AND post_status = 'publish'
+             WHERE post_type = 'cig_customer' AND post_status NOT IN ('trash', 'auto-draft')
              ORDER BY ID",
             ARRAY_A
         );
@@ -388,9 +388,12 @@ class CIG_Migrator {
     private function migrate_invoices() {
         global $wpdb;
 
+        // Include all non-trashed posts — old plugin may use custom statuses
+        // (e.g. post_status = 'reserved') for non-published invoice states.
         $total = (int) $wpdb->get_var(
             "SELECT COUNT(*) FROM {$wpdb->posts}
-             WHERE post_type = 'cig_invoice' AND post_status = 'publish'"
+             WHERE post_type = 'cig_invoice'
+             AND post_status NOT IN ('trash', 'auto-draft')"
         );
 
         $this->log( "  Total legacy invoices: {$total}" );
@@ -399,7 +402,8 @@ class CIG_Migrator {
         for ( $offset = 0; $offset < $total; $offset += $this->batch_size ) {
             $posts = $wpdb->get_results( $wpdb->prepare(
                 "SELECT ID FROM {$wpdb->posts}
-                 WHERE post_type = 'cig_invoice' AND post_status = 'publish'
+                 WHERE post_type = 'cig_invoice'
+                 AND post_status NOT IN ('trash', 'auto-draft')
                  ORDER BY ID
                  LIMIT %d OFFSET %d",
                 $this->batch_size, $offset
@@ -434,6 +438,12 @@ class CIG_Migrator {
 
     private function migrate_single_invoice( $post_id ) {
         global $wpdb;
+
+        // Skip if already migrated (re-run safety)
+        if ( CIG_ID_Mapper::get_new_id( 'invoice', $post_id ) ) {
+            $this->log( "  Skipping post {$post_id}: already in id_map." );
+            return;
+        }
 
         $meta = $this->get_all_meta( $post_id, '_cig_' );
 
@@ -476,6 +486,21 @@ class CIG_Migrator {
         }
 
         $table = $wpdb->prefix . 'cig_invoices';
+
+        // Guard: invoice_number already in new tables (old plugin wrote it directly)
+        if ( $invoice_number ) {
+            $existing_id = (int) $wpdb->get_var( $wpdb->prepare(
+                "SELECT id FROM {$table} WHERE invoice_number = %s LIMIT 1",
+                $invoice_number
+            ) );
+            if ( $existing_id ) {
+                // Link the id_map so subsequent M5/M6 runs can find this invoice
+                CIG_ID_Mapper::set( 'invoice', $post_id, $existing_id );
+                $this->log( "  Skipping {$invoice_number}: already exists as id={$existing_id}, linked in id_map." );
+                return;
+            }
+        }
+
         $wpdb->insert( $table, [
             'legacy_post_id'    => $post_id,
             'invoice_number'    => $invoice_number,
@@ -568,6 +593,15 @@ class CIG_Migrator {
                 continue;
             }
 
+            if ( ! $this->dry_run ) {
+                // Skip if this invoice already has items (idempotent re-runs)
+                $existing_items = (int) $wpdb->get_var( $wpdb->prepare(
+                    "SELECT COUNT(*) FROM {$wpdb->prefix}cig_invoice_items WHERE invoice_id = %d",
+                    $new_invoice_id
+                ) );
+                if ( $existing_items > 0 ) continue;
+            }
+
             $items = maybe_unserialize( $row['meta_value'] );
             if ( ! is_array( $items ) || empty( $items ) ) {
                 $this->log( "  Warning: Invoice post {$post_id} has no items or failed to unserialize." );
@@ -633,6 +667,15 @@ class CIG_Migrator {
 
             if ( ! $new_invoice_id ) continue;
 
+            if ( ! $this->dry_run ) {
+                // Skip if this invoice already has payments (idempotent re-runs)
+                $existing_payments = (int) $wpdb->get_var( $wpdb->prepare(
+                    "SELECT COUNT(*) FROM {$wpdb->prefix}cig_payments WHERE invoice_id = %d",
+                    $new_invoice_id
+                ) );
+                if ( $existing_payments > 0 ) continue;
+            }
+
             $payments = maybe_unserialize( $row['meta_value'] );
             if ( ! is_array( $payments ) || empty( $payments ) ) continue;
 
@@ -682,7 +725,7 @@ class CIG_Migrator {
 
         $posts = $wpdb->get_results(
             "SELECT ID FROM {$wpdb->posts}
-             WHERE post_type = 'cig_deposit' AND post_status = 'publish'
+             WHERE post_type = 'cig_deposit' AND post_status NOT IN ('trash', 'auto-draft')
              ORDER BY ID",
             ARRAY_A
         );
@@ -691,6 +734,10 @@ class CIG_Migrator {
 
         foreach ( $posts as $post ) {
             $post_id = (int) $post['ID'];
+
+            // Skip if already migrated (idempotent re-run safety)
+            if ( CIG_ID_Mapper::get_new_id( 'deposit', $post_id ) ) continue;
+
             $meta = $this->get_all_meta( $post_id, '_cig_' );
 
             $amount = (float) ( $meta['amount'] ?? 0 );
