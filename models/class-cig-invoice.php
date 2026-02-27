@@ -287,11 +287,11 @@ class CIG_Invoice {
 
         // Notify: new standard invoice created
         if ( ( $data['status'] ?? '' ) !== 'fictive' && $created ) {
-            $num = $created['invoiceNumber'] ?? $invoice_id;
+            $num = $created['number'] ?? ( '#' . $invoice_id );
             CIG_Notification::create(
                 'invoice',
-                'New invoice created',
-                $num . ' has been created',
+                'New Invoice Created',
+                'Invoice ' . $num . ' has been created',
                 'file-plus',
                 '/invoices/' . $invoice_id
             );
@@ -352,11 +352,13 @@ class CIG_Invoice {
             $old_lifecycle = self::get_lifecycle( $existing )['key'];
             $new_lifecycle = self::get_lifecycle( $updated )['key'];
             if ( $old_lifecycle === 'reserved' && $new_lifecycle === 'sold' ) {
-                $num = $updated['invoiceNumber'] ?? $id;
+                $num    = $updated['number'] ?? ( '#' . $id );
+                $buyer  = trim( $updated['buyerName'] ?? '' );
+                $detail = $buyer ? $buyer : 'all items marked as sold';
                 CIG_Notification::create(
                     'invoice',
-                    'Invoice sold',
-                    $num . ' has been marked as sold',
+                    'Invoice ' . $num . ' Sold',
+                    $detail,
                     'check-circle',
                     '/invoices/' . $id
                 );
