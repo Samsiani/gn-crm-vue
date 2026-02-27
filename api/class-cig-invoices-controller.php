@@ -40,12 +40,29 @@ class CIG_Invoices_Controller extends CIG_REST_Controller {
             'permission_callback' => [ 'CIG_RBAC', 'is_admin' ],
         ] );
 
+        // Update accountant-only fields (flags + note) — accessible by any authenticated user
+        register_rest_route( $this->namespace, '/invoices/(?P<id>\d+)/accountant-fields', [
+            'methods'             => 'PUT',
+            'callback'            => [ $this, 'update_accountant_fields' ],
+            'permission_callback' => [ 'CIG_RBAC', 'can_read' ],
+        ] );
+
         // Generate next invoice number
         register_rest_route( $this->namespace, '/invoices/next-number', [
             'methods'             => 'GET',
             'callback'            => [ $this, 'next_number' ],
             'permission_callback' => [ 'CIG_RBAC', 'can_write' ],
         ] );
+    }
+
+    public function update_accountant_fields( $request ) {
+        $id     = (int) $request->get_param( 'id' );
+        $body   = $request->get_json_params() ?: [];
+        $result = CIG_Invoice::update_accountant_fields( $id, $body );
+        if ( ! $result ) {
+            return new WP_Error( 'not_found', 'Invoice not found.', [ 'status' => 404 ] );
+        }
+        return rest_ensure_response( $result );
     }
 
     public function list_items( $request ) {

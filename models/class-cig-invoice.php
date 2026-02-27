@@ -323,6 +323,32 @@ class CIG_Invoice {
     }
 
     /**
+     * Update only accountant-managed fields on an invoice.
+     * Allowed: is_rs_uploaded, is_credit_checked, is_receipt_checked, is_corrected, accountant_note.
+     * Used by the PATCH /invoices/:id/accountant-fields endpoint so accountants (read-only
+     * on the main endpoint) can still save their flags and notes.
+     */
+    public static function update_accountant_fields( $id, $data ) {
+        global $wpdb;
+
+        // Reuse existing field extractor (handles camelCase ↔ snake_case)
+        $fields = self::extract_invoice_fields( $data );
+
+        // Whitelist: only accountant-controlled columns allowed
+        $allowed = array_flip( [ 'is_rs_uploaded', 'is_credit_checked', 'is_receipt_checked', 'is_corrected', 'accountant_note' ] );
+        $fields  = array_intersect_key( $fields, $allowed );
+
+        if ( empty( $fields ) ) {
+            return self::find( $id );
+        }
+
+        $fields['updated_datetime'] = current_time( 'mysql' );
+        $wpdb->update( self::table(), $fields, [ 'id' => $id ] );
+        self::clear_kpi_cache();
+        return self::find( $id );
+    }
+
+    /**
      * Generate next invoice number.
      */
     public static function generate_number() {
