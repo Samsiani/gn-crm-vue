@@ -1018,6 +1018,40 @@ class CIG_Migrator {
     }
 
     /**
+     * Fix author_id references that store WP user IDs instead of CIG user IDs.
+     * Remaps invoices.author_id by JOINing on wp_cig_users.wp_user_id.
+     * Returns number of rows updated.
+     */
+    public function fix_author_refs() {
+        global $wpdb;
+        $prefix = $wpdb->prefix . 'cig_';
+
+        return (int) $wpdb->query(
+            "UPDATE {$prefix}invoices i
+             INNER JOIN {$prefix}users u ON u.wp_user_id = i.author_id
+             SET i.author_id = u.id
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM {$prefix}users u2 WHERE u2.id = i.author_id
+             )"
+        );
+    }
+
+    /**
+     * Delete invoice items whose invoice_id has no matching invoice.
+     * Returns number of rows deleted.
+     */
+    public function fix_orphaned_items() {
+        global $wpdb;
+        $prefix = $wpdb->prefix . 'cig_';
+
+        return (int) $wpdb->query(
+            "DELETE ii FROM {$prefix}invoice_items ii
+             LEFT JOIN {$prefix}invoices i ON ii.invoice_id = i.id
+             WHERE i.id IS NULL"
+        );
+    }
+
+    /**
      * Rollback — drop all custom tables and clear mappings.
      */
     public static function rollback() {
@@ -1035,5 +1069,8 @@ class CIG_Migrator {
         }
 
         delete_option( 'cig_db_version' );
+
+        // Recreate empty tables so the app (login, auth) continues to work
+        CIG_Activator::activate();
     }
 }

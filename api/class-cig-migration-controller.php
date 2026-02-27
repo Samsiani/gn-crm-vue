@@ -42,6 +42,18 @@ class CIG_Migration_Controller extends CIG_REST_Controller {
             'permission_callback' => [ 'CIG_RBAC', 'is_admin' ],
         ] );
 
+        register_rest_route( $this->namespace, '/migration/fix-author-refs', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'fix_author_refs' ],
+            'permission_callback' => [ 'CIG_RBAC', 'is_admin' ],
+        ] );
+
+        register_rest_route( $this->namespace, '/migration/fix-orphaned-items', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'fix_orphaned_items' ],
+            'permission_callback' => [ 'CIG_RBAC', 'is_admin' ],
+        ] );
+
         register_rest_route( $this->namespace, '/migration/rollback', [
             'methods'             => 'DELETE',
             'callback'            => [ $this, 'rollback' ],
@@ -152,6 +164,37 @@ class CIG_Migration_Controller extends CIG_REST_Controller {
                 'count'  => $empty_buyer_names,
                 'label'  => 'Invoices with empty buyer name',
                 'action' => 'fix-columns',
+            ];
+        }
+
+        // Author ID mismatch: author_id stores WP user ID instead of CIG user ID
+        $wrong_author_ids = (int) $wpdb->get_var(
+            "SELECT COUNT(*) FROM {$prefix}invoices i
+             WHERE i.author_id IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM {$prefix}users u WHERE u.id = i.author_id)
+             AND EXISTS (SELECT 1 FROM {$prefix}users u WHERE u.wp_user_id = i.author_id)"
+        );
+        if ( $wrong_author_ids > 0 ) {
+            $issues[] = [
+                'key'    => 'wrong_author_ids',
+                'count'  => $wrong_author_ids,
+                'label'  => 'Invoices with author_id pointing to WP user ID instead of CIG user ID',
+                'action' => 'fix-author-refs',
+            ];
+        }
+
+        // Orphaned invoice items
+        $orphaned_items = (int) $wpdb->get_var(
+            "SELECT COUNT(*) FROM {$prefix}invoice_items ii
+             LEFT JOIN {$prefix}invoices i ON ii.invoice_id = i.id
+             WHERE i.id IS NULL"
+        );
+        if ( $orphaned_items > 0 ) {
+            $issues[] = [
+                'key'    => 'orphaned_items',
+                'count'  => $orphaned_items,
+                'label'  => 'Invoice items with no parent invoice (orphaned)',
+                'action' => 'fix-orphaned-items',
             ];
         }
 
@@ -270,6 +313,24 @@ class CIG_Migration_Controller extends CIG_REST_Controller {
         $linked   = $migrator->relink_customers();
 
         return new WP_REST_Response( [ 'success' => true, 'linked' => $linked ], 200 );
+    }
+
+    // ── POST /migration/fix-author-refs ─────────────────────────────────────
+
+    public function fix_author_refs( WP_REST_Request $request ) {
+        $migrator = new CIG_Migrator();
+        $updated  = $migrator->fix_author_refs();
+
+        return new WP_REST_Response( [ 'success' => true, 'updated' => $updated ], 200 );
+    }
+
+    // ── POST /migration/fix-orphaned-items ───────────────────────────────────
+
+    public function fix_orphaned_items( WP_REST_Request $request ) {
+        $migrator = new CIG_Migrator();
+        $deleted  = $migrator->fix_orphaned_items();
+
+        return new WP_REST_Response( [ 'success' => true, 'deleted' => $deleted ], 200 );
     }
 
     // ── POST /migration/verify ───────────────────────────────────────────────
