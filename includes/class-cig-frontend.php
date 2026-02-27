@@ -92,7 +92,7 @@ class CIG_Frontend {
     public function render_shortcode( $atts ) {
         $this->enqueue_assets = true;
 
-        return '<div id="app"><div style="display:flex;align-items:center;justify-content:center;min-height:60vh;"><div style="text-align:center;color:#6b7280;font-family:system-ui,sans-serif;"><div style="width:40px;height:40px;border:3px solid #e5e7eb;border-top-color:#3b82f6;border-radius:50%;animation:cig-spin 0.8s linear infinite;margin:0 auto 16px;"></div>Loading…</div></div><style>@keyframes cig-spin{to{transform:rotate(360deg)}}</style></div>';
+        return '<div id="app"></div>';
     }
 
     /**
