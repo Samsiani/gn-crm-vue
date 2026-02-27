@@ -109,9 +109,9 @@ class CIG_Invoices_Controller extends CIG_REST_Controller {
             return new WP_Error( 'cig_not_found', 'Invoice not found.', [ 'status' => 404 ] );
         }
 
-        // Sales role: can only view own invoices
+        // Sales role: can only view own invoices (accountant can view all)
         $user = $this->get_user( $request );
-        if ( CIG_RBAC::user_is_consultant( $user ) && $invoice['authorId'] !== $user['id'] ) {
+        if ( $user['role'] === 'sales' && $invoice['authorId'] !== $user['id'] ) {
             return new WP_Error( 'cig_forbidden', 'You can only view your own invoices.', [ 'status' => 403 ] );
         }
 
