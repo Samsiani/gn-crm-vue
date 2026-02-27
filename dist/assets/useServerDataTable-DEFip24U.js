@@ -1,0 +1,1 @@
+import{u as n}from"./TableSkeleton-B4UOiI7M.js";import{G as u}from"./index-D3ijZhmC.js";function m(r,{perPage:s=20,debounceMs:t=500,initialFilters:a={}}={}){const{loading:i,...e}=n(r,{perPage:s,debounceMs:t,initialFilters:{search:"",...a}}),o=u({get:()=>e.filters.search??"",set:c=>{e.filters.search=c}});return{...e,isLoading:i,searchQuery:o}}export{m as u};
