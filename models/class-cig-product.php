@@ -417,6 +417,14 @@ class CIG_Product {
                 $wc->set_manage_stock( true );
                 $wc->save();
             }
+            // Out-of-stock notification when stock hits 0 after consuming
+            if ( $delta < 0 ) {
+                $new_stock = (int) ( wc_get_product( $id )?->get_stock_quantity() ?? 0 );
+                if ( $new_stock <= 0 ) {
+                    $product_name = wc_get_product( $id )?->get_name() ?: "Product #{$id}";
+                    CIG_Notification::create( 'stock', 'Out of stock', $product_name . ' is now out of stock', 'alert-triangle', '/stock' );
+                }
+            }
         } else {
             global $wpdb;
             $wpdb->query( $wpdb->prepare(
@@ -424,6 +432,18 @@ class CIG_Product {
                  SET stock = GREATEST(0, stock + %d) WHERE id = %d",
                 $delta, $id
             ));
+            // Out-of-stock notification when stock hits 0 after consuming
+            if ( $delta < 0 ) {
+                $new_stock = (int) $wpdb->get_var( $wpdb->prepare(
+                    "SELECT stock FROM {$wpdb->prefix}cig_products WHERE id = %d", $id
+                ) );
+                if ( $new_stock <= 0 ) {
+                    $product_name = $wpdb->get_var( $wpdb->prepare(
+                        "SELECT name FROM {$wpdb->prefix}cig_products WHERE id = %d", $id
+                    ) ) ?: "Product #{$id}";
+                    CIG_Notification::create( 'stock', 'Out of stock', $product_name . ' is now out of stock', 'alert-triangle', '/stock' );
+                }
+            }
         }
     }
 

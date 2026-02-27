@@ -230,6 +230,20 @@ class CIG_Activator {
             KEY idx_status (status)
         ) $charset;" );
 
+        // ── Notifications ──
+        dbDelta( "CREATE TABLE {$prefix}notifications (
+            id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            type        VARCHAR(32)  NOT NULL DEFAULT 'system',
+            title       VARCHAR(255) NOT NULL DEFAULT '',
+            message     VARCHAR(500) NOT NULL DEFAULT '',
+            icon        VARCHAR(64)  NOT NULL DEFAULT 'bell',
+            link        VARCHAR(255) NOT NULL DEFAULT '',
+            is_read     TINYINT(1)   NOT NULL DEFAULT 0,
+            created_at  DATETIME     NOT NULL,
+            PRIMARY KEY (id),
+            KEY idx_read_created (is_read, created_at)
+        ) $charset;" );
+
         // ── ID Map (temporary migration audit) ──
         dbDelta( "CREATE TABLE {$prefix}id_map (
             entity_type         VARCHAR(30) NOT NULL,
@@ -380,6 +394,30 @@ class CIG_Activator {
         }
 
         $wpdb->suppress_errors( false );
+    }
+
+    /**
+     * Create the notifications table for existing installs (DB version 1.5).
+     * Uses dbDelta so it is idempotent — safe to call multiple times.
+     */
+    public static function add_notifications_table() {
+        global $wpdb;
+        $charset = $wpdb->get_charset_collate();
+        $table   = $wpdb->prefix . 'cig_notifications';
+
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta( "CREATE TABLE {$table} (
+            id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            type        VARCHAR(32)  NOT NULL DEFAULT 'system',
+            title       VARCHAR(255) NOT NULL DEFAULT '',
+            message     VARCHAR(500) NOT NULL DEFAULT '',
+            icon        VARCHAR(64)  NOT NULL DEFAULT 'bell',
+            link        VARCHAR(255) NOT NULL DEFAULT '',
+            is_read     TINYINT(1)   NOT NULL DEFAULT 0,
+            created_at  DATETIME     NOT NULL,
+            PRIMARY KEY (id),
+            KEY idx_read_created (is_read, created_at)
+        ) $charset;" );
     }
 
     private static function seed_company() {

@@ -36,6 +36,7 @@ class CIG_Loader {
             new CIG_Company_Controller(),
             new CIG_Deposits_Controller(),
             new CIG_Deliveries_Controller(),
+            new CIG_Notifications_Controller(),
         ];
 
         foreach ( $controllers as $controller ) {

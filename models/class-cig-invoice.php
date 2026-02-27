@@ -283,7 +283,21 @@ class CIG_Invoice {
         self::recalculate_totals( $invoice_id );
 
         self::clear_kpi_cache();
-        return self::find( $invoice_id );
+        $created = self::find( $invoice_id );
+
+        // Notify: new standard invoice created
+        if ( ( $data['status'] ?? '' ) !== 'fictive' && $created ) {
+            $num = $created['invoiceNumber'] ?? $invoice_id;
+            CIG_Notification::create(
+                'invoice',
+                'New invoice created',
+                $num . ' has been created',
+                'file-plus',
+                '/invoices/' . $invoice_id
+            );
+        }
+
+        return $created;
     }
 
     /**
@@ -331,7 +345,25 @@ class CIG_Invoice {
         self::recalculate_totals( $id );
 
         self::clear_kpi_cache();
-        return self::find( $id );
+        $updated = self::find( $id );
+
+        // Notify: reserved → sold lifecycle transition
+        if ( $updated && $old_status !== 'fictive' ) {
+            $old_lifecycle = self::get_lifecycle( $existing )['key'];
+            $new_lifecycle = self::get_lifecycle( $updated )['key'];
+            if ( $old_lifecycle === 'reserved' && $new_lifecycle === 'sold' ) {
+                $num = $updated['invoiceNumber'] ?? $id;
+                CIG_Notification::create(
+                    'invoice',
+                    'Invoice sold',
+                    $num . ' has been marked as sold',
+                    'check-circle',
+                    '/invoices/' . $id
+                );
+            }
+        }
+
+        return $updated;
     }
 
     /**
