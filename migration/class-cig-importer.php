@@ -468,12 +468,25 @@ class CIG_Importer {
                 $method = 'other';
             }
 
-            // Normalise date: may be datetime or just date
+            // Normalise date: handles Y-m-d, Y-m-d H:i:s, d/m/Y, Unix timestamp
             $pay_date_raw = $pay['date'] ?? ( $pay['payment_date'] ?? '' );
             $payment_date = date( 'Y-m-d' ); // fallback to today
-            if ( ! empty( $pay_date_raw ) ) {
-                $ts = strtotime( $pay_date_raw );
-                if ( $ts ) $payment_date = date( 'Y-m-d', $ts );
+            if ( ! empty( $pay_date_raw ) && $pay_date_raw !== '0000-00-00' ) {
+                // Unix timestamp (integer or numeric string)
+                if ( is_numeric( $pay_date_raw ) ) {
+                    $payment_date = date( 'Y-m-d', (int) $pay_date_raw );
+                } else {
+                    $ts = strtotime( $pay_date_raw );
+                    if ( ! $ts ) {
+                        // Try d/m/Y format (Georgian / European)
+                        if ( preg_match( '#^(\d{1,2})/(\d{1,2})/(\d{4})#', $pay_date_raw, $m ) ) {
+                            $ts = mktime( 0, 0, 0, (int) $m[2], (int) $m[1], (int) $m[3] );
+                        }
+                    }
+                    if ( $ts && $ts > 0 ) {
+                        $payment_date = date( 'Y-m-d', $ts );
+                    }
+                }
             }
 
             // Map old user_id to new cig_user_id
@@ -560,6 +573,7 @@ class CIG_Importer {
         $cust_table = $wpdb->prefix . 'cig_customers';
         $item_table = $wpdb->prefix . 'cig_invoice_items';
         $prod_table = $wpdb->prefix . 'cig_products';
+        $pay_table  = $wpdb->prefix . 'cig_payments';
 
         // ── Customers: tax_id (most reliable) ──
         $by_tax = $wpdb->query(
@@ -595,6 +609,14 @@ class CIG_Importer {
                  AND ii.sku != ''
              SET ii.product_id = p.id
              WHERE ii.product_id IS NULL"
+        );
+
+        // ── Fix zero dates (0000-00-00) in payments — use invoice created_at ──
+        $wpdb->query(
+            "UPDATE {$pay_table} p
+             INNER JOIN {$inv_table} i ON i.id = p.invoice_id
+             SET p.payment_date = i.created_at
+             WHERE p.payment_date = '0000-00-00' OR p.payment_date IS NULL"
         );
 
         return [

@@ -79,11 +79,12 @@ class CIG_Invoice {
             $params[] = $args['status'];
         }
 
-        // Lifecycle filter — replicates getInvoiceLifecycle() logic
+        // Lifecycle filter — matches both directly-stored values (imported invoices)
+        // and the legacy 'active' + item_status pattern (migrated invoices).
         if ( ! empty( $args['lifecycle'] ) ) {
             switch ( $args['lifecycle'] ) {
                 case 'draft':
-                    $where[] = "(i.status = 'fictive' OR i.lifecycle_status = 'draft')";
+                    $where[] = "(i.status = 'fictive' OR i.lifecycle_status IN ('draft','unfinished'))";
                     break;
                 case 'sold':
                     $where[] = "(i.lifecycle_status IN ('sold','completed') OR (
@@ -96,16 +97,20 @@ class CIG_Invoice {
                     ))";
                     break;
                 case 'reserved':
-                    $where[] = "i.lifecycle_status = 'active' AND EXISTS (
-                        SELECT 1 FROM {$items_table} it
-                        WHERE it.invoice_id = i.id AND it.item_status = 'reserved'
-                    )";
+                    $where[] = "(i.lifecycle_status = 'reserved' OR (
+                        i.lifecycle_status = 'active' AND EXISTS (
+                            SELECT 1 FROM {$items_table} it
+                            WHERE it.invoice_id = i.id AND it.item_status = 'reserved'
+                        )
+                    ))";
                     break;
                 case 'canceled':
-                    $where[] = "i.lifecycle_status = 'active' AND EXISTS (
-                        SELECT 1 FROM {$items_table} it
-                        WHERE it.invoice_id = i.id AND it.item_status = 'canceled'
-                    )";
+                    $where[] = "(i.lifecycle_status IN ('canceled','cancelled') OR (
+                        i.lifecycle_status = 'active' AND EXISTS (
+                            SELECT 1 FROM {$items_table} it
+                            WHERE it.invoice_id = i.id AND it.item_status = 'canceled'
+                        )
+                    ))";
                     break;
             }
         }
@@ -205,7 +210,7 @@ class CIG_Invoice {
         // field ties (e.g. created_at is DATE-only so multiple invoices share the
         // same day value — highest ID = most recently inserted).
         $tiebreak = ( $sort === 'id' ) ? '' : ', i.id DESC';
-        $query = "SELECT i.*, u.name AS author_name, u.avatar AS author_avatar FROM {$table} i {$join_sql} WHERE {$where_sql} ORDER BY i.{$sort} {$order}{$tiebreak} LIMIT %d OFFSET %d";
+        $query = "SELECT i.*, u.name AS author_name, u.avatar AS author_avatar, c.name AS customer_name FROM {$table} i {$join_sql} WHERE {$where_sql} ORDER BY i.{$sort} {$order}{$tiebreak} LIMIT %d OFFSET %d";
         $query_params = array_merge( $params, [ $limit, $offset ] );
         $rows = $wpdb->get_results( $wpdb->prepare( $query, ...$query_params ), ARRAY_A );
 
@@ -1085,7 +1090,7 @@ class CIG_Invoice {
             'authorId'          => $row['author_id'] ? (int) $row['author_id'] : null,
             'authorName'        => $row['author_name'] ?? null,
             'authorAvatar'      => $row['author_avatar'] ?? null,
-            'buyerName'         => $row['buyer_name'],
+            'buyerName'         => $row['buyer_name'] ?: ( $row['customer_name'] ?? '' ),
             'buyerTaxId'        => $row['buyer_tax_id'],
             'buyerPhone'        => $row['buyer_phone'],
             'buyerAddress'      => $row['buyer_address'],
