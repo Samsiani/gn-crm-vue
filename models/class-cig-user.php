@@ -226,12 +226,12 @@ class CIG_User {
     private static function hydrate( $row ) {
         return [
             'id'        => (int) $row['id'],
-            'wpUserId'  => $row['wp_user_id'] ? (int) $row['wp_user_id'] : null,
-            'name'      => $row['name'],
-            'nameEn'    => $row['name_en'],
-            'avatar'    => $row['avatar'],
-            'role'      => $row['role'],
-            'isActive'  => (bool) $row['is_active'],
+            'wpUserId'  => ! empty( $row['wp_user_id'] ) ? (int) $row['wp_user_id'] : null,
+            'name'      => $row['name'] ?? '',
+            'nameEn'    => $row['name_en'] ?? '',
+            'avatar'    => $row['avatar'] ?? '',
+            'role'      => $row['role'] ?? 'sales',
+            'isActive'  => (bool) ( $row['is_active'] ?? false ),
         ];
     }
 
