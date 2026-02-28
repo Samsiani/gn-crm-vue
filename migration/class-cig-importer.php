@@ -602,13 +602,33 @@ class CIG_Importer {
              WHERE i.customer_id IS NULL"
         );
 
-        // ── Products: SKU match ──
+        // ── Products: cig_products SKU match ──
         $by_sku = $wpdb->query(
             "UPDATE {$item_table} ii
              INNER JOIN {$prod_table} p ON p.sku = ii.sku
                  AND ii.sku != ''
              SET ii.product_id = p.id
              WHERE ii.product_id IS NULL"
+        );
+
+        // ── Products: WooCommerce SKU match (wp_postmeta._sku) ──
+        $by_wc_sku = $wpdb->query(
+            "UPDATE {$item_table} ii
+             INNER JOIN {$wpdb->postmeta} pm ON pm.meta_value = ii.sku
+                 AND pm.meta_key = '_sku' AND ii.sku != ''
+             INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+                 AND p.post_type IN ('product','product_variation')
+             SET ii.product_id = pm.post_id
+             WHERE ii.product_id IS NULL"
+        );
+
+        // ── Backfill name/brand from WC products (wp_posts.post_title) ──
+        $wpdb->query(
+            "UPDATE {$item_table} ii
+             INNER JOIN {$wpdb->posts} p ON p.ID = ii.product_id
+                 AND p.post_type IN ('product','product_variation')
+             SET ii.name = CASE WHEN (ii.name IS NULL OR ii.name = '') THEN p.post_title ELSE ii.name END
+             WHERE ii.product_id IS NOT NULL AND (ii.name IS NULL OR ii.name = '')"
         );
 
         // ── Fix zero dates (0000-00-00) in payments — use invoice created_at ──
@@ -632,11 +652,12 @@ class CIG_Importer {
         );
 
         return [
-            'invoices_linked_by_tax_id' => (int) $by_tax,
-            'invoices_linked_by_phone'  => (int) $by_phone,
-            'invoices_linked_by_name'   => (int) $by_name,
-            'items_linked_by_sku'       => (int) $by_sku,
-            'items_names_backfilled'    => (int) $names_backfilled,
+            'invoices_linked_by_tax_id'  => (int) $by_tax,
+            'invoices_linked_by_phone'   => (int) $by_phone,
+            'invoices_linked_by_name'    => (int) $by_name,
+            'items_linked_by_sku'        => (int) $by_sku,
+            'items_linked_by_wc_sku'     => (int) $by_wc_sku,
+            'items_names_backfilled'     => (int) $names_backfilled,
         ];
     }
 

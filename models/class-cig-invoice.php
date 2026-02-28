@@ -224,15 +224,26 @@ class CIG_Invoice {
             $ids_sql        = implode( ',', array_map( 'intval', $invoice_ids ) );
 
             $prod_t_batch = $wpdb->prefix . 'cig_products';
+            $posts_batch  = $wpdb->posts;
             $all_items = $wpdb->get_results(
                 "SELECT it.id, it.invoice_id, it.sort_order, it.product_id,
-                    COALESCE(NULLIF(it.name,''), cp.name, cp.name_ka, '') as name,
-                    COALESCE(NULLIF(it.brand,''), cp.brand, '') as brand,
+                    COALESCE(
+                        NULLIF(it.name,''),
+                        NULLIF(cp.name,''),   NULLIF(cp.name_ka,''),
+                        NULLIF(wc.post_title,''),
+                        NULLIF(cpsk.name,''), NULLIF(cpsk.name_ka,''),
+                        ''
+                    ) as name,
+                    COALESCE(NULLIF(it.brand,''), NULLIF(cp.brand,''), NULLIF(cpsk.brand,''), '') as brand,
                     it.sku, it.description,
-                    COALESCE(NULLIF(it.image_url,''), cp.image_url, '') as image_url,
+                    COALESCE(NULLIF(it.image_url,''), NULLIF(cp.image_url,''), NULLIF(cpsk.image_url,''), '') as image_url,
                     it.qty, it.price, it.total, it.item_status, it.reservation_days, it.warranty
                  FROM {$items_table} it
-                 LEFT JOIN {$prod_t_batch} cp ON cp.id = it.product_id
+                 LEFT JOIN {$prod_t_batch} cp   ON cp.id    = it.product_id
+                 LEFT JOIN {$posts_batch}  wc   ON wc.ID    = it.product_id
+                     AND wc.post_type IN ('product','product_variation')
+                 LEFT JOIN {$prod_t_batch} cpsk ON cpsk.sku = it.sku
+                     AND it.sku != '' AND it.product_id IS NULL
                  WHERE it.invoice_id IN ({$ids_sql})
                  ORDER BY it.invoice_id, it.sort_order",
                 ARRAY_A
@@ -1042,16 +1053,27 @@ class CIG_Invoice {
             $items_rows = $pre_items;
         } else {
             $prod_t_single = $wpdb->prefix . 'cig_products';
+            $posts_single  = $wpdb->posts;
             $items_rows = $wpdb->get_results(
                 $wpdb->prepare(
                     "SELECT it.id, it.invoice_id, it.sort_order, it.product_id,
-                        COALESCE(NULLIF(it.name,''), cp.name, cp.name_ka, '') as name,
-                        COALESCE(NULLIF(it.brand,''), cp.brand, '') as brand,
+                        COALESCE(
+                            NULLIF(it.name,''),
+                            NULLIF(cp.name,''),   NULLIF(cp.name_ka,''),
+                            NULLIF(wc.post_title,''),
+                            NULLIF(cpsk.name,''), NULLIF(cpsk.name_ka,''),
+                            ''
+                        ) as name,
+                        COALESCE(NULLIF(it.brand,''), NULLIF(cp.brand,''), NULLIF(cpsk.brand,''), '') as brand,
                         it.sku, it.description,
-                        COALESCE(NULLIF(it.image_url,''), cp.image_url, '') as image_url,
+                        COALESCE(NULLIF(it.image_url,''), NULLIF(cp.image_url,''), NULLIF(cpsk.image_url,''), '') as image_url,
                         it.qty, it.price, it.total, it.item_status, it.reservation_days, it.warranty
                      FROM " . self::items_table() . " it
-                     LEFT JOIN {$prod_t_single} cp ON cp.id = it.product_id
+                     LEFT JOIN {$prod_t_single} cp   ON cp.id    = it.product_id
+                     LEFT JOIN {$posts_single}  wc   ON wc.ID    = it.product_id
+                         AND wc.post_type IN ('product','product_variation')
+                     LEFT JOIN {$prod_t_single} cpsk ON cpsk.sku = it.sku
+                         AND it.sku != '' AND it.product_id IS NULL
                      WHERE it.invoice_id = %d
                      ORDER BY it.sort_order",
                     $row['id']
