@@ -172,6 +172,15 @@ function cig_export_invoices() {
         foreach ( $items as $item ) {
             $item_status = isset( $item['item_status'] ) ? $item['item_status']
                          : ( isset( $item['status'] ) ? $item['status'] : 'none' );
+            // Quantity: old plugin may use 'qty' or 'quantity' as the key
+            $export_qty   = isset( $item['qty'] ) ? (float) $item['qty']
+                          : ( isset( $item['quantity'] ) ? (float) $item['quantity'] : 1 );
+            $export_price = (float) ( $item['price'] ?? 0 );
+            $export_total = (float) ( $item['total'] ?? 0 );
+            // Recalculate total if missing (trust qty×price)
+            if ( $export_total <= 0 && $export_qty > 0 && $export_price > 0 ) {
+                $export_total = $export_qty * $export_price;
+            }
             $export_items[] = [
                 'product_id'       => isset( $item['product_id'] ) ? (int) $item['product_id'] : null,
                 'name'             => $item['name'] ?? '',
@@ -179,9 +188,9 @@ function cig_export_invoices() {
                 'sku'              => $item['sku'] ?? '',
                 'description'      => $item['description'] ?? '',
                 'image_url'        => $item['image_url'] ?? ( $item['imageUrl'] ?? '' ),
-                'qty'              => (string) ( $item['qty'] ?? 1 ),
-                'price'            => (string) ( $item['price'] ?? '0' ),
-                'total'            => (string) ( $item['total'] ?? '0' ),
+                'qty'              => (string) $export_qty,
+                'price'            => (string) $export_price,
+                'total'            => (string) $export_total,
                 'item_status'      => $item_status,
                 'reservation_days' => isset( $item['reservation_days'] ) ? (int) $item['reservation_days'] : 0,
                 'warranty'         => $item['warranty'] ?? '',

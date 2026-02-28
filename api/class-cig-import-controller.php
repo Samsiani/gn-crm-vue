@@ -122,18 +122,28 @@ class CIG_Import_Controller extends CIG_REST_Controller {
 
     /**
      * POST /import/repair-paid
-     * Recalculates paid_amount on all invoices from their actual payment records.
-     * Excludes consignment payments (consistent with financial model).
-     * Safe to run multiple times.
+     * Recalculates total_amount (from items) and paid_amount (from payments) on all invoices.
+     * Run this after a sync to fix any stale values. Safe to run multiple times.
      */
     public function repair_paid( WP_REST_Request $request ) {
         global $wpdb;
-        $inv_table = $wpdb->prefix . 'cig_invoices';
-        $pay_table = $wpdb->prefix . 'cig_payments';
+        $inv_table  = $wpdb->prefix . 'cig_invoices';
+        $pay_table  = $wpdb->prefix . 'cig_payments';
+        $item_table = $wpdb->prefix . 'cig_invoice_items';
 
-        // Bulk recalculate paid_amount from payment records (excluding consignment)
-        $rows_before = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$inv_table}" );
+        $rows = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$inv_table}" );
 
+        // 1. Recalculate total_amount from items (qty × price, excludes canceled)
+        $wpdb->query(
+            "UPDATE {$inv_table} SET total_amount = (
+                SELECT COALESCE(SUM(it.qty * it.price), 0)
+                FROM {$item_table} it
+                WHERE it.invoice_id = {$inv_table}.id
+                  AND it.item_status != 'canceled'
+             )"
+        );
+
+        // 2. Recalculate paid_amount from payment records (excludes consignment)
         $wpdb->query(
             "UPDATE {$inv_table} SET paid_amount = (
                 SELECT COALESCE(SUM(p.amount), 0)
@@ -143,13 +153,13 @@ class CIG_Import_Controller extends CIG_REST_Controller {
              )"
         );
 
-        // Clear all KPI transient caches
+        // 3. Clear all KPI transient caches
         $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_cig_kpi%'" );
         $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_cig_kpi%'" );
 
         return rest_ensure_response( [
-            'fixed'   => $rows_before,
-            'message' => 'paid_amount recalculated from payment records (consignment excluded)',
+            'fixed'   => $rows,
+            'message' => 'total_amount and paid_amount recalculated from items/payments',
         ] );
     }
 

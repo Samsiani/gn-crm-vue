@@ -505,6 +505,9 @@ class CIG_Importer {
             ] );
         }
 
+        // Recalculate total_amount from items (qty×price) — more reliable than _cig_invoice_total meta.
+        $this->recalculate_total_amount( $new_inv_id );
+
         // Recalculate paid_amount from the just-inserted payment records (excludes consignment).
         // The _cig_paid_amount meta may be absent in the old plugin, so we derive it from payments.
         $this->recalculate_paid( $new_inv_id );
@@ -614,7 +617,7 @@ class CIG_Importer {
                 'sku'               => $item['sku'] ?? '',
                 'description'       => $item['description'] ?? '',
                 'image_url'         => $item['image_url'] ?? '',
-                'qty'               => (float) ( $item['qty'] ?? 1 ),
+                'qty'               => (float) ( $item['qty'] ?? ( $item['quantity'] ?? 1 ) ),
                 'price'             => (float) ( $item['price'] ?? 0 ),
                 'total'             => (float) ( $item['total'] ?? 0 ),
                 'item_status'       => $item_status,
@@ -672,6 +675,23 @@ class CIG_Importer {
             "UPDATE {$inv_table} SET paid_amount = (
                 SELECT COALESCE(SUM(amount), 0) FROM {$pay_table}
                 WHERE invoice_id = %d AND method != 'consignment'
+             ) WHERE id = %d",
+            $invoice_id, $invoice_id
+        ) );
+    }
+
+    /**
+     * Recalculate total_amount from actual item rows (qty × price, excludes canceled).
+     * More reliable than trusting _cig_invoice_total meta from old plugin.
+     */
+    private function recalculate_total_amount( int $invoice_id ): void {
+        global $wpdb;
+        $inv_table  = $wpdb->prefix . 'cig_invoices';
+        $item_table = $wpdb->prefix . 'cig_invoice_items';
+        $wpdb->query( $wpdb->prepare(
+            "UPDATE {$inv_table} SET total_amount = (
+                SELECT COALESCE(SUM(qty * price), 0) FROM {$item_table}
+                WHERE invoice_id = %d AND item_status != 'canceled'
              ) WHERE id = %d",
             $invoice_id, $invoice_id
         ) );
@@ -829,6 +849,7 @@ class CIG_Importer {
         if ( ! $new_id ) return 0;
 
         $this->insert_items( $new_id, $inv['items'] ?? [] );
+        $this->recalculate_total_amount( $new_id );
         $this->insert_payments( $new_id, $inv['payments'] ?? [] );
         $this->recalculate_paid( $new_id );
 
@@ -858,6 +879,7 @@ class CIG_Importer {
         // Replace items and payments wholesale
         $wpdb->delete( $item_table, [ 'invoice_id' => $existing_id ] );
         $this->insert_items( $existing_id, $inv['items'] ?? [] );
+        $this->recalculate_total_amount( $existing_id );
 
         $wpdb->delete( $pay_table, [ 'invoice_id' => $existing_id ] );
         $this->insert_payments( $existing_id, $inv['payments'] ?? [] );
