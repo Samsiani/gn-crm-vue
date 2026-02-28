@@ -69,6 +69,10 @@ class CIG_Importer {
 
         $this->import_invoices( $data['invoices'] ?? [] );
 
+        // Always re-link customers and products after import
+        $relink = self::relink();
+        $this->results['relink'] = $relink;
+
         $duration_ms = (int) round( ( microtime( true ) - $start ) * 1000 );
 
         // Persist last import log
@@ -426,10 +430,22 @@ class CIG_Importer {
             if ( ! in_array( $item_status, $allowed_item_statuses, true ) ) {
                 $item_status = 'none';
             }
+            // Try to link product by SKU (same across sites)
+            $item_sku   = trim( $item['sku'] ?? '' );
+            $product_id = null;
+            if ( $item_sku ) {
+                $product_id = (int) $wpdb->get_var(
+                    $wpdb->prepare(
+                        "SELECT id FROM {$wpdb->prefix}cig_products WHERE sku = %s LIMIT 1",
+                        $item_sku
+                    )
+                ) ?: null;
+            }
+
             $wpdb->insert( $item_table, [
                 'invoice_id'       => $new_inv_id,
                 'sort_order'       => $sort++,
-                'product_id'       => null, // products don't exist on new site
+                'product_id'       => $product_id,
                 'legacy_product_id'=> isset( $item['product_id'] ) ? (int) $item['product_id'] : null,
                 'name'             => $item['name'] ?? '',
                 'brand'            => $item['brand'] ?? '',
@@ -527,6 +543,66 @@ class CIG_Importer {
             if ( $id ) return $id;
         }
         return null;
+    }
+
+    // ── Re-link (fix customer_id + product_id on existing rows) ─────────────
+
+    /**
+     * Batch-update customer_id on invoices and product_id on items.
+     * Safe to run multiple times (WHERE customer_id IS NULL / product_id IS NULL).
+     *
+     * @return array { invoices_by_tax_id, invoices_by_phone, invoices_by_name, items_by_sku }
+     */
+    public static function relink() {
+        global $wpdb;
+
+        $inv_table  = $wpdb->prefix . 'cig_invoices';
+        $cust_table = $wpdb->prefix . 'cig_customers';
+        $item_table = $wpdb->prefix . 'cig_invoice_items';
+        $prod_table = $wpdb->prefix . 'cig_products';
+
+        // ── Customers: tax_id (most reliable) ──
+        $by_tax = $wpdb->query(
+            "UPDATE {$inv_table} i
+             INNER JOIN {$cust_table} c ON c.tax_id = i.buyer_tax_id
+                 AND i.buyer_tax_id != ''
+             SET i.customer_id = c.id
+             WHERE i.customer_id IS NULL"
+        );
+
+        // ── Customers: phone fallback ──
+        $by_phone = $wpdb->query(
+            "UPDATE {$inv_table} i
+             INNER JOIN {$cust_table} c ON c.phone = i.buyer_phone
+                 AND i.buyer_phone != ''
+             SET i.customer_id = c.id
+             WHERE i.customer_id IS NULL"
+        );
+
+        // ── Customers: name fallback ──
+        $by_name = $wpdb->query(
+            "UPDATE {$inv_table} i
+             INNER JOIN {$cust_table} c ON c.name = i.buyer_name
+                 AND i.buyer_name != ''
+             SET i.customer_id = c.id
+             WHERE i.customer_id IS NULL"
+        );
+
+        // ── Products: SKU match ──
+        $by_sku = $wpdb->query(
+            "UPDATE {$item_table} ii
+             INNER JOIN {$prod_table} p ON p.sku = ii.sku
+                 AND ii.sku != ''
+             SET ii.product_id = p.id
+             WHERE ii.product_id IS NULL"
+        );
+
+        return [
+            'invoices_linked_by_tax_id' => (int) $by_tax,
+            'invoices_linked_by_phone'  => (int) $by_phone,
+            'invoices_linked_by_name'   => (int) $by_name,
+            'items_linked_by_sku'       => (int) $by_sku,
+        ];
     }
 
     // ── Preview (no DB writes) ────────────────────────────────────────────────

@@ -27,6 +27,12 @@ class CIG_Import_Controller extends CIG_REST_Controller {
             'callback'            => [ $this, 'get_log' ],
             'permission_callback' => [ 'CIG_RBAC', 'is_admin' ],
         ] );
+
+        register_rest_route( $this->namespace, '/import/relink', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'relink' ],
+            'permission_callback' => [ 'CIG_RBAC', 'is_admin' ],
+        ] );
     }
 
     /**
@@ -65,6 +71,17 @@ class CIG_Import_Controller extends CIG_REST_Controller {
         $importer = new CIG_Importer();
         $result   = $importer->run( $data, $options );
 
+        return rest_ensure_response( $result );
+    }
+
+    /**
+     * POST /import/relink
+     * Re-links customer_id on invoices and product_id on items.
+     * Safe to run multiple times — only touches NULL fields.
+     */
+    public function relink( WP_REST_Request $request ) {
+        require_once CIG_PLUGIN_DIR . 'migration/class-cig-importer.php';
+        $result = CIG_Importer::relink();
         return rest_ensure_response( $result );
     }
 
