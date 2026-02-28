@@ -770,8 +770,12 @@ class CIG_Invoice {
         $items_t = self::items_table();
         $pays_t  = self::payments_table();
 
-        $from = sanitize_text_field( $args['date_from'] ?? '' );
-        $to   = sanitize_text_field( $args['date_to'] ?? '' );
+        $from      = sanitize_text_field( $args['date_from'] ?? '' );
+        $to        = sanitize_text_field( $args['date_to'] ?? '' );
+        $author_id = isset( $args['author_id'] ) ? (int) $args['author_id'] : 0;
+
+        // Author filter clause (applied to all invoice queries)
+        $author_clause = $author_id ? $wpdb->prepare( ' AND i.author_id = %d', $author_id ) : '';
 
         // Date conditions on invoice.created_at
         $inv_date = '';
@@ -790,7 +794,7 @@ class CIG_Invoice {
                 COALESCE(SUM(paid_amount), 0) AS total_revenue,
                 COALESCE(SUM(GREATEST(0, total_amount - paid_amount)), 0) AS outstanding_balance
              FROM {$table} i
-             WHERE i.status = 'standard' {$inv_date}",
+             WHERE i.status = 'standard' {$author_clause} {$inv_date}",
             ARRAY_A
         );
 
@@ -802,7 +806,7 @@ class CIG_Invoice {
                    i.lifecycle_status = 'active'
                    AND EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')
                ))
-               {$inv_date}"
+               {$author_clause} {$inv_date}"
         );
 
         // ── 3. Payment method totals (filtered by payment_date) ───────────────
@@ -810,7 +814,7 @@ class CIG_Invoice {
             "SELECT p.method, SUM(p.amount) AS total
              FROM {$pays_t} p
              JOIN {$table} i ON i.id = p.invoice_id
-             WHERE i.status = 'standard' {$pay_date}
+             WHERE i.status = 'standard' {$author_clause} {$pay_date}
              GROUP BY p.method",
             ARRAY_A
         );
@@ -828,7 +832,7 @@ class CIG_Invoice {
                     COUNT(*) AS invoice_count, COALESCE(SUM(i.paid_amount), 0) AS revenue
              FROM {$table} i
              LEFT JOIN {$user_t} u ON u.id = i.author_id
-             WHERE i.status = 'standard' AND i.author_id IS NOT NULL {$inv_date}
+             WHERE i.status = 'standard' AND i.author_id IS NOT NULL {$author_clause} {$inv_date}
              GROUP BY i.author_id, u.name, u.name_en, u.avatar
              ORDER BY revenue DESC",
             ARRAY_A
@@ -853,7 +857,7 @@ class CIG_Invoice {
                         EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')
                     )) THEN 1 ELSE 0 END) AS reserved
              FROM {$table} i
-             WHERE 1=1 {$inv_date}",
+             WHERE 1=1 {$author_clause} {$inv_date}",
             ARRAY_A
         );
         $lifecycle_dist = [
@@ -866,11 +870,11 @@ class CIG_Invoice {
         $fictive_row = $wpdb->get_row(
             "SELECT COUNT(*) AS fcount, COALESCE(SUM(total_amount), 0) AS ftotal
              FROM {$table} i
-             WHERE i.status = 'fictive' {$inv_date}",
+             WHERE i.status = 'fictive' {$author_clause} {$inv_date}",
             ARRAY_A
         );
         $all_count_row = $wpdb->get_var(
-            "SELECT COUNT(*) FROM {$table} i WHERE 1=1 {$inv_date}"
+            "SELECT COUNT(*) FROM {$table} i WHERE 1=1 {$author_clause} {$inv_date}"
         );
         $fictive = [
             'count'         => (int)   ( $fictive_row['fcount'] ?? 0 ),
@@ -883,18 +887,21 @@ class CIG_Invoice {
             "SELECT COALESCE(SUM(p.amount), 0)
              FROM {$pays_t} p
              JOIN {$table} i ON i.id = p.invoice_id
-             WHERE i.status = 'standard' AND p.method = 'other' {$pay_date}"
+             WHERE i.status = 'standard' AND p.method = 'other' {$author_clause} {$pay_date}"
         );
 
-        // ── 8. Monthly trend for revenue chart (last 6 months, unfiltered) ───
+        // ── 8. Monthly trend for revenue chart (last 6 months, unfiltered by date picker) ───
         $six_ago  = gmdate( 'Y-m-01', strtotime( '-5 months' ) );
         $today    = gmdate( 'Y-m-t' );
+        // author_clause uses alias 'i' — need alias for these queries too
+        $trend_author = $author_id ? $wpdb->prepare( ' AND author_id = %d', $author_id ) : '';
+        $trend_pay_author = $author_id ? $wpdb->prepare( ' AND i.author_id = %d', $author_id ) : '';
 
         $trend_inv = $wpdb->get_results( $wpdb->prepare(
             "SELECT DATE_FORMAT(created_at, '%%Y-%%m') AS ym,
                 COALESCE(SUM(total_amount), 0) AS revenue
              FROM {$table}
-             WHERE status = 'standard' AND created_at >= %s AND created_at <= %s
+             WHERE status = 'standard' AND created_at >= %s AND created_at <= %s {$trend_author}
              GROUP BY DATE_FORMAT(created_at, '%%Y-%%m')",
             $six_ago, $today
         ), ARRAY_A );
@@ -906,7 +913,7 @@ class CIG_Invoice {
              FROM {$pays_t} p
              JOIN {$table} i ON i.id = p.invoice_id
              WHERE i.status = 'standard' AND p.method != 'consignment'
-               AND p.payment_date >= %s AND p.payment_date <= %s
+               AND p.payment_date >= %s AND p.payment_date <= %s {$trend_pay_author}
              GROUP BY DATE_FORMAT(p.payment_date, '%%Y-%%m')",
             $six_ago, $today
         ), ARRAY_A );
@@ -937,7 +944,7 @@ class CIG_Invoice {
                 SUM(CASE WHEN it.item_status = 'reserved' THEN it.qty ELSE 0 END) AS reserved
              FROM {$items_t} it
              JOIN {$table} i ON i.id = it.invoice_id
-             WHERE i.status = 'standard' AND it.item_status != 'canceled' {$inv_date}
+             WHERE i.status = 'standard' AND it.item_status != 'canceled' {$author_clause} {$inv_date}
              GROUP BY it.product_id
              ORDER BY revenue DESC",
             ARRAY_A
@@ -963,7 +970,7 @@ class CIG_Invoice {
                 COALESCE(SUM(GREATEST(0, i.total_amount - i.paid_amount)), 0) AS outstanding
              FROM {$table} i
              LEFT JOIN {$cust_t2} c ON c.id = i.customer_id
-             WHERE i.status = 'standard' AND i.customer_id IS NOT NULL {$inv_date}
+             WHERE i.status = 'standard' AND i.customer_id IS NOT NULL {$author_clause} {$inv_date}
              GROUP BY i.customer_id, c.name, c.name_en, c.tax_id",
             ARRAY_A
         );

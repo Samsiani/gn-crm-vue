@@ -50,6 +50,7 @@ class CIG_KPI_Controller extends CIG_REST_Controller {
         $args = [
             'date_from' => sanitize_text_field( $request->get_param( 'date_from' ) ?? '' ),
             'date_to'   => sanitize_text_field( $request->get_param( 'date_to' ) ?? '' ),
+            'author_id' => $request->get_param( 'author_id' ) ? (int) $request->get_param( 'author_id' ) : null,
         ];
 
         $data = CIG_Invoice::get_statistics_kpi( $args );

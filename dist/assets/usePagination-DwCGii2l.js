@@ -1,0 +1,1 @@
+import{r as n}from"./index-C8Cnw__Q.js";function i(r=15){const e=n(1),a=n(r),t=n(1);function o(u){t.value=Math.max(1,Math.ceil(u.length/a.value)),e.value>t.value&&(e.value=t.value);const l=(e.value-1)*a.value;return u.slice(l,l+a.value)}function c(u){e.value=u}function s(){e.value=1}return{currentPage:e,totalPages:t,perPage:a,paginate:o,setPage:c,resetPage:s}}export{i as u};
