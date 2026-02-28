@@ -143,6 +143,7 @@ class CIG_Auth_Controller extends CIG_REST_Controller {
                         if ( $token ) {
                             $response['token'] = $token;
                         }
+                        $response['nonce'] = wp_create_nonce( 'wp_rest' );
                         return rest_ensure_response( $response );
                     }
                 }
@@ -187,6 +188,7 @@ class CIG_Auth_Controller extends CIG_REST_Controller {
         if ( $token ) {
             $response['token'] = $token;
         }
+        $response['nonce'] = wp_create_nonce( 'wp_rest' );
 
         return rest_ensure_response( $response );
     }

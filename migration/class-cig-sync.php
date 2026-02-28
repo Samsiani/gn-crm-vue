@@ -39,7 +39,7 @@ class CIG_Sync {
 
         $response = wp_remote_get( $url, [
             'timeout'   => 90,
-            'sslverify' => true,
+            'sslverify' => false,
         ] );
 
         if ( is_wp_error( $response ) ) {

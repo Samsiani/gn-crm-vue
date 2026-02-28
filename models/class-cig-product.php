@@ -436,15 +436,17 @@ class CIG_Product {
             } else {
                 wc_update_product_stock( $id, abs( $delta ), 'decrease' );
             }
-            // Single product lookup for manage_stock check + out-of-stock notification
+            // Ensure manage_stock is on (idempotent, cheap)
             $wc = wc_get_product( $id );
-            if ( $wc ) {
-                if ( ! $wc->get_manage_stock() ) {
-                    $wc->set_manage_stock( true );
-                    $wc->save();
-                }
-                if ( $delta < 0 && (int) $wc->get_stock_quantity() <= 0 ) {
-                    $product_name = $wc->get_name() ?: "Product #{$id}";
+            if ( $wc && ! $wc->get_manage_stock() ) {
+                $wc->set_manage_stock( true );
+                $wc->save();
+            }
+            // Out-of-stock notification when stock hits 0 after consuming
+            if ( $delta < 0 ) {
+                $new_stock = (int) ( wc_get_product( $id )?->get_stock_quantity() ?? 0 );
+                if ( $new_stock <= 0 ) {
+                    $product_name = wc_get_product( $id )?->get_name() ?: "Product #{$id}";
                     CIG_Notification::create( 'stock', 'Out of stock', $product_name . ' is now out of stock', 'alert-triangle', '/stock' );
                 }
             }

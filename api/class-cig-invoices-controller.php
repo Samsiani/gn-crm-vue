@@ -158,8 +158,8 @@ class CIG_Invoices_Controller extends CIG_REST_Controller {
             );
         }
 
-        // Non-admin users can only edit own invoices
-        if ( CIG_RBAC::user_is_non_admin( $user ) && $existing['authorId'] !== $user['id'] ) {
+        // Sales role: can only edit own invoices
+        if ( CIG_RBAC::user_is_consultant( $user ) && $existing['authorId'] !== $user['id'] ) {
             return new WP_Error( 'cig_forbidden', 'You can only edit your own invoices.', [ 'status' => 403 ] );
         }
 

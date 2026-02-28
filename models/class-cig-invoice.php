@@ -294,40 +294,31 @@ class CIG_Invoice {
         $invoice_data = self::extract_invoice_fields( $data );
         $invoice_data['created_datetime'] = current_time( 'mysql' );
 
-        $wpdb->query( 'START TRANSACTION' );
+        $wpdb->insert( self::table(), $invoice_data );
+        $invoice_id = $wpdb->insert_id;
 
-        try {
-            $wpdb->insert( self::table(), $invoice_data );
-            $invoice_id = $wpdb->insert_id;
-
-            if ( ! $invoice_id ) {
-                $wpdb->query( 'ROLLBACK' );
-                return new WP_Error( 'cig_create_failed', 'Failed to create invoice.', [ 'status' => 500 ] );
-            }
-
-            // Insert items
-            if ( ! empty( $data['items'] ) ) {
-                self::save_items( $invoice_id, $data['items'] );
-            }
-
-            // Insert payments
-            if ( ! empty( $data['payments'] ) ) {
-                self::save_payments( $invoice_id, $data['payments'] );
-            }
-
-            // Recalculate totals
-            self::recalculate_totals( $invoice_id );
-
-            $wpdb->query( 'COMMIT' );
-        } catch ( \Exception $e ) {
-            $wpdb->query( 'ROLLBACK' );
+        if ( ! $invoice_id ) {
             return new WP_Error( 'cig_create_failed', 'Failed to create invoice.', [ 'status' => 500 ] );
         }
 
-        // Stock sync runs after commit so stock adjustments are not rolled back on invoice failure
-        if ( ! empty( $data['items'] ) && ( $data['status'] ?? '' ) !== 'fictive' ) {
-            self::sync_stock( [], $data['items'] );
+        // Insert items
+        if ( ! empty( $data['items'] ) ) {
+            self::save_items( $invoice_id, $data['items'] );
+            // Stock sync: consume stock for sold items on new invoices.
+            // Fictive invoices use item_status='none', so sold_qty_by_product() returns []
+            // naturally — the explicit guard makes intent clear.
+            if ( ( $data['status'] ?? '' ) !== 'fictive' ) {
+                self::sync_stock( [], $data['items'] );
+            }
         }
+
+        // Insert payments
+        if ( ! empty( $data['payments'] ) ) {
+            self::save_payments( $invoice_id, $data['payments'] );
+        }
+
+        // Recalculate totals
+        self::recalculate_totals( $invoice_id );
 
         self::clear_kpi_cache();
         $created = self::find( $invoice_id );
@@ -474,13 +465,11 @@ class CIG_Invoice {
         $prefix   = ( $company && ! empty( $company['invoicePrefix'] ) ) ? $company['invoicePrefix'] : 'N';
         $starting = ( $company && ! empty( $company['startingInvoiceNumber'] ) ) ? (int) $company['startingInvoiceNumber'] : 1001;
 
-        $last_raw = $wpdb->get_var( $wpdb->prepare(
-            "SELECT MAX(CAST(REPLACE(invoice_number, %s, '') AS UNSIGNED))
+        $last_raw = $wpdb->get_var(
+            "SELECT MAX(CAST(REPLACE(invoice_number, '{$prefix}', '') AS UNSIGNED))
              FROM " . self::table() . "
-             WHERE invoice_number LIKE %s",
-            $prefix,
-            $wpdb->esc_like( $prefix ) . '%'
-        ) );
+             WHERE invoice_number LIKE '{$prefix}%'"
+        );
 
         // Guard against NULL, scientific notation strings, or overflowed values
         // ctype_digit rejects 'E+18', negatives, decimals — only pure digit strings pass
@@ -1161,11 +1150,11 @@ class CIG_Invoice {
             'authorId'          => $row['author_id'] ? (int) $row['author_id'] : null,
             'authorName'        => $row['author_name'] ?? null,
             'authorAvatar'      => $row['author_avatar'] ?? null,
-            'buyerName'         => ( $row['buyer_name'] ?? '' ) ?: ( $row['customer_name'] ?? '' ),
-            'buyerTaxId'        => $row['buyer_tax_id'] ?? '',
-            'buyerPhone'        => $row['buyer_phone'] ?? '',
-            'buyerAddress'      => $row['buyer_address'] ?? '',
-            'buyerEmail'        => $row['buyer_email'] ?? '',
+            'buyerName'         => $row['buyer_name'] ?: ( $row['customer_name'] ?? '' ),
+            'buyerTaxId'        => $row['buyer_tax_id'],
+            'buyerPhone'        => $row['buyer_phone'],
+            'buyerAddress'      => $row['buyer_address'],
+            'buyerEmail'        => $row['buyer_email'],
             'generalNote'       => $row['general_note'] ?? '',
             'consultantNote'    => $row['consultant_note'] ?? '',
             'accountantNote'    => $row['accountant_note'] ?? '',

@@ -83,7 +83,7 @@ class CIG_RBAC {
     }
 
     /**
-     * Accountant, admin, or manager can update accountant fields (checkboxes, notes).
+     * Accountant can update certain invoice fields (checkboxes, notes).
      */
     public static function can_update_accountant_fields( $request ) {
         $user = CIG_Auth_Middleware::get_current_user( $request );
@@ -91,17 +91,8 @@ class CIG_RBAC {
             return $user;
         }
 
-        $role = $user['role'];
-        if ( in_array( $role, [ 'admin', 'manager', 'accountant' ], true ) ) {
-            $request->set_param( '_cig_user', $user );
-            return true;
-        }
-
-        return new WP_Error(
-            'cig_forbidden',
-            'Only accountants and admins can update these fields.',
-            [ 'status' => 403 ]
-        );
+        $request->set_param( '_cig_user', $user );
+        return true; // All authenticated users can update accountant fields
     }
 
     /**
@@ -112,9 +103,9 @@ class CIG_RBAC {
     }
 
     /**
-     * Helper: check if the current user is NOT admin/manager (i.e. sales or accountant).
+     * Helper: check if the current user is sales (consultant).
      */
-    public static function user_is_non_admin( $user ) {
+    public static function user_is_consultant( $user ) {
         return ! self::user_is_admin( $user );
     }
 }

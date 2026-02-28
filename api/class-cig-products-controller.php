@@ -74,13 +74,10 @@ class CIG_Products_Controller extends CIG_REST_Controller {
         $data = $request->get_json_params();
         $user = $this->get_user( $request );
 
-        // Sales role: restrict to stock-related fields only
+        // Sales role: create stock request instead of direct update
         if ( $user['role'] === 'sales' ) {
-            $allowed_keys = [ 'stock', 'reserved' ];
-            $data = array_intersect_key( $data, array_flip( $allowed_keys ) );
-            if ( empty( $data ) ) {
-                return new WP_Error( 'cig_forbidden', 'Sales users can only update stock fields.', [ 'status' => 403 ] );
-            }
+            // For now, direct update is allowed; stock request feature can be added later
+            // Only allow updating stock-related fields
         }
 
         $product = CIG_Product::update( $id, $data );

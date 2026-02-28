@@ -84,23 +84,13 @@ class CIG_Delivery {
     public static function update( $id, $data ) {
         global $wpdb;
         $fields = self::extract_fields( $data );
-        if ( empty( $fields ) ) {
-            return self::find( $id );
-        }
-        $result = $wpdb->update( self::table(), $fields, [ 'id' => $id ] );
-        if ( $result === false ) {
-            return new WP_Error( 'cig_update_failed', 'Failed to update delivery record.', [ 'status' => 500 ] );
-        }
+        $wpdb->update( self::table(), $fields, [ 'id' => $id ] );
         return self::find( $id );
     }
 
     public static function delete( $id ) {
         global $wpdb;
-        $result = $wpdb->delete( self::table(), [ 'id' => $id ] );
-        if ( $result === false ) {
-            return new WP_Error( 'cig_delete_failed', 'Failed to delete delivery record.', [ 'status' => 500 ] );
-        }
-        return true;
+        return $wpdb->delete( self::table(), [ 'id' => $id ] );
     }
 
     private static function hydrate( $row ) {

@@ -98,7 +98,7 @@ class CIG_Auth_Middleware {
         } catch ( \Exception $e ) {
             return new WP_Error(
                 'cig_token_invalid',
-                'Invalid token. Please log in again.',
+                'Invalid token: ' . $e->getMessage(),
                 [ 'status' => 401 ]
             );
         }
