@@ -592,16 +592,19 @@ class CIG_Invoice {
             ARRAY_A
         );
         $method_totals = [ 'cash' => 0, 'company_transfer' => 0, 'credit' => 0, 'consignment' => 0, 'other' => 0 ];
-        $total_paid = 0;
         foreach ( $method_rows as $row ) {
             $key = $row['method'];
             if ( array_key_exists( $key, $method_totals ) ) {
                 $method_totals[ $key ] = (float) $row['total'];
             }
-            if ( $key !== 'consignment' ) {
-                $total_paid += (float) $row['total'];
-            }
         }
+
+        // Total paid: sum of authoritative paid_amount on invoices (not from payment records,
+        // which may contain historical/stale entries from old plugin's _cig_payment_history).
+        $total_paid = (float) $wpdb->get_var(
+            "SELECT COALESCE(SUM(paid_amount), 0) FROM {$table} i
+             WHERE i.status = 'standard' {$inv_date}{$author_cond}"
+        );
 
         // ── 4. Monthly trend (last 6 months) — 2 queries replacing 12 ──────────
         $six_month_start = gmdate( 'Y-m-01', strtotime( '-5 months' ) );

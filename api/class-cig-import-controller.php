@@ -51,6 +51,12 @@ class CIG_Import_Controller extends CIG_REST_Controller {
             'callback'            => [ $this, 'sync_run' ],
             'permission_callback' => [ 'CIG_RBAC', 'is_admin' ],
         ] );
+
+        register_rest_route( $this->namespace, '/import/repair-paid', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'repair_paid' ],
+            'permission_callback' => [ 'CIG_RBAC', 'is_admin' ],
+        ] );
     }
 
     /**
@@ -112,6 +118,60 @@ class CIG_Import_Controller extends CIG_REST_Controller {
             return new WP_Error( 'cig_no_log', 'No import log found.', [ 'status' => 404 ] );
         }
         return rest_ensure_response( $log );
+    }
+
+    /**
+     * POST /import/repair-paid
+     * Fetches export JSON and sets paid_amount on each invoice from the authoritative
+     * exported value (fixing incorrect recalculated values from payment history).
+     */
+    public function repair_paid( WP_REST_Request $request ) {
+        $url = sanitize_url( get_option( 'cig_sync_url', '' ) );
+        if ( empty( $url ) ) {
+            return new WP_Error( 'cig_no_url', 'No sync URL configured. Set it in the Live Sync section first.', [ 'status' => 400 ] );
+        }
+
+        $response = wp_remote_get( $url, [ 'timeout' => 90, 'sslverify' => false ] );
+        if ( is_wp_error( $response ) ) {
+            return new WP_Error( 'cig_fetch_failed', $response->get_error_message(), [ 'status' => 502 ] );
+        }
+        $code = wp_remote_retrieve_response_code( $response );
+        if ( $code !== 200 ) {
+            return new WP_Error( 'cig_fetch_failed', "Remote returned HTTP {$code}", [ 'status' => 502 ] );
+        }
+        $data = json_decode( wp_remote_retrieve_body( $response ), true );
+        if ( ! is_array( $data ) || empty( $data['invoices'] ) ) {
+            return new WP_Error( 'cig_invalid_json', 'Invalid JSON from remote URL.', [ 'status' => 400 ] );
+        }
+
+        global $wpdb;
+        $table   = $wpdb->prefix . 'cig_invoices';
+        $fixed   = 0;
+        $skipped = 0;
+
+        foreach ( $data['invoices'] as $inv ) {
+            $inv_number  = trim( $inv['invoice_number'] ?? '' );
+            $paid_amount = (float) ( $inv['paid_amount'] ?? 0 );
+            if ( empty( $inv_number ) ) continue;
+
+            $updated = $wpdb->update(
+                $table,
+                [ 'paid_amount' => $paid_amount ],
+                [ 'invoice_number' => $inv_number ]
+            );
+            if ( $updated ) $fixed++;
+            else $skipped++;
+        }
+
+        // Clear KPI cache
+        global $wpdb;
+        $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_cig_kpi_%'" );
+
+        return rest_ensure_response( [
+            'fixed'   => $fixed,
+            'skipped' => $skipped,
+            'total'   => count( $data['invoices'] ),
+        ] );
     }
 
     /**

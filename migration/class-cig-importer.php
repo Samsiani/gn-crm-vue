@@ -398,7 +398,7 @@ class CIG_Importer {
             'status'             => $status,
             'lifecycle_status'   => $lifecycle,
             'total_amount'       => (float) ( $inv['invoice_total'] ?? 0 ),
-            'paid_amount'        => 0, // will recalculate after payments
+            'paid_amount'        => (float) ( $inv['paid_amount'] ?? 0 ), // use authoritative value from export
             'created_at'         => $created_at,
             'sold_date'          => $sold_date,
             'buyer_name'         => $inv['buyer_name'] ?? '',
@@ -505,18 +505,9 @@ class CIG_Importer {
             ] );
         }
 
-        // Recalculate paid_amount from actual payment rows
-        $wpdb->query( $wpdb->prepare(
-            "UPDATE {$inv_table}
-             SET paid_amount = (
-                 SELECT COALESCE(SUM(amount), 0)
-                 FROM {$pay_table}
-                 WHERE invoice_id = %d
-             )
-             WHERE id = %d",
-            $new_inv_id,
-            $new_inv_id
-        ) );
+        // paid_amount was already set from the authoritative exported value above.
+        // Do NOT recalculate from _cig_payment_history — that log may contain
+        // stale/corrected entries whose sum exceeds the actual paid amount.
 
         // Record in id_map for idempotence
         if ( $legacy_id ) {
@@ -534,7 +525,8 @@ class CIG_Importer {
 
     /**
      * Map all mutable invoice fields from JSON to DB column array.
-     * Does NOT include invoice_number, legacy_post_id, paid_amount, content_hash, synced_at.
+     * Does NOT include invoice_number, legacy_post_id, content_hash, synced_at.
+     * Includes paid_amount from the authoritative exported field.
      */
     private function prepare_invoice_fields( array $inv ): array {
         $old_author_id = (int) ( $inv['author_wp_user_id'] ?? 0 );
@@ -576,6 +568,7 @@ class CIG_Importer {
             'status'             => $status,
             'lifecycle_status'   => $lifecycle,
             'total_amount'       => (float) ( $inv['invoice_total'] ?? 0 ),
+            'paid_amount'        => (float) ( $inv['paid_amount'] ?? 0 ),
             'created_at'         => $created_at,
             'sold_date'          => $sold_date,
             'buyer_name'         => $inv['buyer_name'] ?? '',
@@ -748,12 +741,27 @@ class CIG_Importer {
      * @return array { new, updated, skipped, errors[], duration_ms }
      */
     public function sync( array $data ): array {
-        $start   = microtime( true );
-        $results = [ 'new' => 0, 'updated' => 0, 'skipped' => 0, 'errors' => [] ];
+        $start = microtime( true );
 
-        // Build maps for author/customer resolution (lookup only)
+        // Reset class-level results for this run (used by import_users/customers/deposits)
+        $this->results = [
+            'users'     => [ 'inserted' => 0, 'skipped' => 0, 'errors' => [] ],
+            'customers' => [ 'inserted' => 0, 'skipped' => 0, 'errors' => [] ],
+            'deposits'  => [ 'inserted' => 0, 'skipped' => 0, 'errors' => [] ],
+            'invoices'  => [ 'inserted' => 0, 'skipped' => 0, 'errors' => [] ],
+        ];
+        $this->options = [ 'skip_duplicates' => true ]; // always skip duplicates for sync
+
+        // Import new users/customers/deposits (same logic as full import, skip existing)
+        $this->import_users( $data['users'] ?? [] );
+        $this->import_customers( $data['customers'] ?? [] );
+        $this->import_deposits( $data['deposits'] ?? [] );
+        // After importing, user_map + customer_map are already populated by the above calls.
+        // Rebuild from JSON to catch any that already existed but aren't in the maps.
         $this->build_user_map( $data['users'] ?? [] );
         $this->build_customer_map( $data['customers'] ?? [] );
+
+        $invoice_results = [ 'new' => 0, 'updated' => 0, 'skipped' => 0, 'errors' => [] ];
 
         $inv_table = $wpdb_ref = null;
         global $wpdb;
@@ -775,25 +783,33 @@ class CIG_Importer {
 
                 if ( ! $existing ) {
                     $new_id = $this->sync_insert( $inv, $new_hash );
-                    if ( $new_id ) $results['new']++;
-                    else $results['errors'][] = '#' . $inv_number . ': insert failed — ' . $wpdb->last_error;
+                    if ( $new_id ) $invoice_results['new']++;
+                    else $invoice_results['errors'][] = '#' . $inv_number . ': insert failed — ' . $wpdb->last_error;
                 } elseif ( ! empty( $new_hash ) && $existing['content_hash'] === $new_hash ) {
-                    $results['skipped']++;
+                    $invoice_results['skipped']++;
                 } else {
                     $ok = $this->sync_update( (int) $existing['id'], $inv, $new_hash );
-                    if ( $ok ) $results['updated']++;
-                    else $results['errors'][] = '#' . $inv_number . ': update failed — ' . $wpdb->last_error;
+                    if ( $ok ) $invoice_results['updated']++;
+                    else $invoice_results['errors'][] = '#' . $inv_number . ': update failed — ' . $wpdb->last_error;
                 }
             } catch ( Exception $e ) {
-                $results['errors'][] = '#' . $inv_number . ': ' . $e->getMessage();
+                $invoice_results['errors'][] = '#' . $inv_number . ': ' . $e->getMessage();
             }
         }
 
         // Re-link customers and products after sync
         self::relink();
 
-        $results['duration_ms'] = (int) round( ( microtime( true ) - $start ) * 1000 );
-        return $results;
+        return [
+            'new'         => $invoice_results['new'],
+            'updated'     => $invoice_results['updated'],
+            'skipped'     => $invoice_results['skipped'],
+            'errors'      => $invoice_results['errors'],
+            'users'       => $this->results['users'],
+            'customers'   => $this->results['customers'],
+            'deposits'    => $this->results['deposits'],
+            'duration_ms' => (int) round( ( microtime( true ) - $start ) * 1000 ),
+        ];
     }
 
     private function sync_insert( array $inv, string $hash ): int {
@@ -804,9 +820,9 @@ class CIG_Importer {
         $fields = $this->prepare_invoice_fields( $inv );
         $fields['invoice_number'] = trim( $inv['invoice_number'] );
         $fields['legacy_post_id'] = ( (int) ( $inv['legacy_post_id'] ?? 0 ) ) ?: null;
-        $fields['paid_amount']    = 0;
         $fields['content_hash']   = $hash;
         $fields['synced_at']      = current_time( 'mysql' );
+        // paid_amount is set from JSON in prepare_invoice_fields (authoritative)
 
         $wpdb->insert( $inv_table, $fields );
         $new_id = (int) $wpdb->insert_id;
@@ -814,7 +830,7 @@ class CIG_Importer {
 
         $this->insert_items( $new_id, $inv['items'] ?? [] );
         $this->insert_payments( $new_id, $inv['payments'] ?? [] );
-        $this->recalculate_paid( $new_id );
+        // Do NOT recalculate — paid_amount from JSON is authoritative
 
         $legacy_id = (int) ( $inv['legacy_post_id'] ?? 0 );
         if ( $legacy_id ) {
@@ -845,8 +861,8 @@ class CIG_Importer {
 
         $wpdb->delete( $pay_table, [ 'invoice_id' => $existing_id ] );
         $this->insert_payments( $existing_id, $inv['payments'] ?? [] );
+        // paid_amount is set from JSON in prepare_invoice_fields — no recalculate needed
 
-        $this->recalculate_paid( $existing_id );
         return true;
     }
 
