@@ -14,7 +14,7 @@ class CIG_Customers_Controller extends CIG_REST_Controller {
         register_rest_route( $this->namespace, '/customers', [
             'methods'             => 'POST',
             'callback'            => [ $this, 'create_item' ],
-            'permission_callback' => [ 'CIG_RBAC', 'can_write' ],
+            'permission_callback' => [ 'CIG_RBAC', 'is_admin' ],
         ] );
 
         register_rest_route( $this->namespace, '/customers/(?P<id>\d+)', [
@@ -26,7 +26,7 @@ class CIG_Customers_Controller extends CIG_REST_Controller {
         register_rest_route( $this->namespace, '/customers/(?P<id>\d+)', [
             'methods'             => 'PUT',
             'callback'            => [ $this, 'update_item' ],
-            'permission_callback' => [ 'CIG_RBAC', 'can_write' ],
+            'permission_callback' => [ 'CIG_RBAC', 'is_admin' ],
         ] );
 
         register_rest_route( $this->namespace, '/customers/(?P<id>\d+)', [
