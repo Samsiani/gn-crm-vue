@@ -57,6 +57,12 @@ class CIG_Import_Controller extends CIG_REST_Controller {
             'callback'            => [ $this, 'repair_paid' ],
             'permission_callback' => [ 'CIG_RBAC', 'is_admin' ],
         ] );
+
+        register_rest_route( $this->namespace, '/import/export', [
+            'methods'             => 'GET',
+            'callback'            => [ $this, 'export_data' ],
+            'permission_callback' => [ 'CIG_RBAC', 'is_admin' ],
+        ] );
     }
 
     /**
@@ -210,5 +216,16 @@ class CIG_Import_Controller extends CIG_REST_Controller {
             return $result;
         }
         return rest_ensure_response( $result );
+    }
+
+    /**
+     * GET /import/export
+     * Returns all data from the new site in old-plugin-compatible JSON format.
+     * Use this to compare with the old site's export-old-plugin.php output.
+     */
+    public function export_data( WP_REST_Request $request ) {
+        require_once CIG_PLUGIN_DIR . 'migration/class-cig-exporter.php';
+        $data = CIG_Exporter::export();
+        return rest_ensure_response( $data );
     }
 }
