@@ -26,31 +26,23 @@ class CIG_Data_Validator {
         global $wpdb;
         $prefix = $wpdb->prefix . 'cig_';
 
-        // Invoice count — include all non-trashed CPT posts (old plugin may use custom statuses)
+        // Invoice count
         $count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$prefix}invoices" );
         $legacy_count = (int) $wpdb->get_var(
-            "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'cig_invoice' AND post_status NOT IN ('trash', 'auto-draft')"
+            "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'cig_invoice' AND post_status = 'publish'"
         );
-        if ( $legacy_count === 0 ) {
-            $this->add_result( 'Invoice count', $count > 0, '> 0', $count );
-        } else {
-            $this->add_result( 'Invoice count', $count === $legacy_count, $legacy_count, $count );
-        }
+        $this->add_result( 'Invoice count', $count === $legacy_count, $legacy_count, $count );
 
         // Customer count
         $count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$prefix}customers" );
         $this->add_result( 'Customer count', $count > 0, '> 0', $count );
 
-        // Deposit count — include all non-trashed CPT posts
+        // Deposit count
         $count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$prefix}deposits" );
         $legacy_count = (int) $wpdb->get_var(
-            "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'cig_deposit' AND post_status NOT IN ('trash', 'auto-draft')"
+            "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'cig_deposit' AND post_status = 'publish'"
         );
-        if ( $legacy_count === 0 ) {
-            $this->add_result( 'Deposit count', true, 'N/A', $count );
-        } else {
-            $this->add_result( 'Deposit count', $count === $legacy_count, $legacy_count, $count );
-        }
+        $this->add_result( 'Deposit count', $count === $legacy_count, $legacy_count, $count );
 
         // User count
         $count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$prefix}users" );
@@ -89,7 +81,7 @@ class CIG_Data_Validator {
         $prefix = $wpdb->prefix . 'cig_';
 
         $rs = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$prefix}invoices WHERE is_rs_uploaded = 1" );
-        $this->add_result( 'RS uploaded count', true, 'N/A', $rs );
+        $this->add_result( 'RS uploaded count', $rs > 0, '> 0', $rs );
 
         $corrected = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$prefix}invoices WHERE is_corrected = 1" );
         $this->add_result( 'Corrected count', true, 'N/A', $corrected );
@@ -110,16 +102,10 @@ class CIG_Data_Validator {
         );
         $this->add_result( 'Sold (was completed)', $sold > 0, '> 0', $sold );
 
-        $reserved = (int) $wpdb->get_var(
-            "SELECT COUNT(*) FROM {$prefix}invoices WHERE lifecycle_status = 'reserved'"
-        );
-        $this->add_result( 'Reserved (was reserved)', $reserved >= 0, 'N/A', $reserved );
-
-        // Check no invoices are stuck with legacy 'active' value (indicates unfixed migration)
-        $active_stuck = (int) $wpdb->get_var(
+        $active = (int) $wpdb->get_var(
             "SELECT COUNT(*) FROM {$prefix}invoices WHERE lifecycle_status = 'active'"
         );
-        $this->add_result( 'No stuck active lifecycle', $active_stuck === 0, 0, $active_stuck );
+        $this->add_result( 'Active (was reserved)', true, 'N/A', $active );
 
         $draft = (int) $wpdb->get_var(
             "SELECT COUNT(*) FROM {$prefix}invoices WHERE lifecycle_status = 'draft'"

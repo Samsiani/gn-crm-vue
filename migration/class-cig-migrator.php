@@ -239,7 +239,7 @@ class CIG_Migrator {
         // Step 2: Import customer CPT records (post_type = 'cig_customer')
         $customer_posts = $wpdb->get_results(
             "SELECT ID, post_title FROM {$wpdb->posts}
-             WHERE post_type = 'cig_customer' AND post_status NOT IN ('trash', 'auto-draft')
+             WHERE post_type = 'cig_customer' AND post_status = 'publish'
              ORDER BY ID",
             ARRAY_A
         );
@@ -352,6 +352,8 @@ class CIG_Migrator {
             ARRAY_A
         );
 
+        $created_by_tax = []; // tax_id → new_id, to avoid duplicates
+
         foreach ( $invoices as $inv ) {
             $legacy_cid = (int) ( $inv['customer_id'] ?? 0 );
             if ( ! $legacy_cid ) continue;
@@ -359,27 +361,56 @@ class CIG_Migrator {
             // Already mapped?
             if ( CIG_ID_Mapper::get_new_id( 'customer', $legacy_cid ) ) continue;
 
-            $buyer = [
-                'name'    => trim( $inv['buyer_name']    ?? '' ),
-                'tax_id'  => trim( $inv['buyer_tax_id']  ?? '' ),
-                'phone'   => trim( $inv['buyer_phone']   ?? '' ),
-                'email'   => trim( $inv['buyer_email']   ?? '' ),
-                'address' => trim( $inv['buyer_address'] ?? '' ),
-            ];
+            $tax_id = trim( $inv['buyer_tax_id'] ?? '' );
+            $name   = trim( $inv['buyer_name'] ?? '' );
 
-            if ( ! $buyer['name'] && ! $buyer['tax_id'] ) continue;
+            if ( ! $name && ! $tax_id ) continue;
+
+            // Try tax_id match in existing customers
+            if ( $tax_id ) {
+                $table = $wpdb->prefix . 'cig_customers';
+
+                // Already created in this loop?
+                if ( isset( $created_by_tax[ $tax_id ] ) ) {
+                    CIG_ID_Mapper::set( 'customer', $legacy_cid, $created_by_tax[ $tax_id ] );
+                    continue;
+                }
+
+                $existing = $wpdb->get_var( $wpdb->prepare(
+                    "SELECT id FROM {$table} WHERE tax_id = %s LIMIT 1",
+                    $tax_id
+                ) );
+
+                if ( $existing ) {
+                    CIG_ID_Mapper::set( 'customer', $legacy_cid, (int) $existing );
+                    $created_by_tax[ $tax_id ] = (int) $existing;
+                    continue;
+                }
+            }
 
             if ( $this->dry_run ) {
-                $this->log( "  [DRY] Would find/create customer from invoice: {$buyer['name']} (Tax: {$buyer['tax_id']})" );
+                $this->log( "  [DRY] Would create customer from invoice: {$name} (Tax: {$tax_id})" );
                 continue;
             }
 
-            // Waterfall match: tax_id → email → phone → name → create
-            $new_id = $this->find_or_create_customer_waterfall( $buyer, $legacy_cid );
-            if ( $new_id ) {
-                CIG_ID_Mapper::set( 'customer', $legacy_cid, $new_id );
-                $count++;
+            // Create new customer from buyer fields
+            $table = $wpdb->prefix . 'cig_customers';
+            $wpdb->insert( $table, [
+                'legacy_term_id' => $legacy_cid,
+                'name'           => $name,
+                'name_en'        => '',
+                'tax_id'         => $tax_id,
+                'address'        => $inv['buyer_address'] ?? '',
+                'phone'          => $inv['buyer_phone'] ?? '',
+                'email'          => $inv['buyer_email'] ?? '',
+            ] );
+
+            $new_id = $wpdb->insert_id;
+            CIG_ID_Mapper::set( 'customer', $legacy_cid, $new_id );
+            if ( $tax_id ) {
+                $created_by_tax[ $tax_id ] = $new_id;
             }
+            $count++;
         }
     }
 
@@ -388,12 +419,9 @@ class CIG_Migrator {
     private function migrate_invoices() {
         global $wpdb;
 
-        // Include all non-trashed posts — old plugin may use custom statuses
-        // (e.g. post_status = 'reserved') for non-published invoice states.
         $total = (int) $wpdb->get_var(
             "SELECT COUNT(*) FROM {$wpdb->posts}
-             WHERE post_type = 'cig_invoice'
-             AND post_status NOT IN ('trash', 'auto-draft')"
+             WHERE post_type = 'cig_invoice' AND post_status = 'publish'"
         );
 
         $this->log( "  Total legacy invoices: {$total}" );
@@ -402,8 +430,7 @@ class CIG_Migrator {
         for ( $offset = 0; $offset < $total; $offset += $this->batch_size ) {
             $posts = $wpdb->get_results( $wpdb->prepare(
                 "SELECT ID FROM {$wpdb->posts}
-                 WHERE post_type = 'cig_invoice'
-                 AND post_status NOT IN ('trash', 'auto-draft')
+                 WHERE post_type = 'cig_invoice' AND post_status = 'publish'
                  ORDER BY ID
                  LIMIT %d OFFSET %d",
                 $this->batch_size, $offset
@@ -438,12 +465,6 @@ class CIG_Migrator {
 
     private function migrate_single_invoice( $post_id ) {
         global $wpdb;
-
-        // Skip if already migrated (re-run safety)
-        if ( CIG_ID_Mapper::get_new_id( 'invoice', $post_id ) ) {
-            $this->log( "  Skipping post {$post_id}: already in id_map." );
-            return;
-        }
 
         $meta = $this->get_all_meta( $post_id, '_cig_' );
 
@@ -486,21 +507,6 @@ class CIG_Migrator {
         }
 
         $table = $wpdb->prefix . 'cig_invoices';
-
-        // Guard: invoice_number already in new tables (old plugin wrote it directly)
-        if ( $invoice_number ) {
-            $existing_id = (int) $wpdb->get_var( $wpdb->prepare(
-                "SELECT id FROM {$table} WHERE invoice_number = %s LIMIT 1",
-                $invoice_number
-            ) );
-            if ( $existing_id ) {
-                // Link the id_map so subsequent M5/M6 runs can find this invoice
-                CIG_ID_Mapper::set( 'invoice', $post_id, $existing_id );
-                $this->log( "  Skipping {$invoice_number}: already exists as id={$existing_id}, linked in id_map." );
-                return;
-            }
-        }
-
         $wpdb->insert( $table, [
             'legacy_post_id'    => $post_id,
             'invoice_number'    => $invoice_number,
@@ -537,8 +543,8 @@ class CIG_Migrator {
         switch ( $legacy ) {
             case 'unfinished': return 'draft';
             case 'completed':  return 'sold';
-            case 'reserved':   return 'reserved';
-            default:           return 'reserved';
+            case 'reserved':   return 'active';
+            default:           return 'active';
         }
     }
 
@@ -591,15 +597,6 @@ class CIG_Migrator {
             if ( ! $new_invoice_id ) {
                 $this->log( "  Warning: No invoice mapping for post {$post_id}, skipping items." );
                 continue;
-            }
-
-            if ( ! $this->dry_run ) {
-                // Skip if this invoice already has items (idempotent re-runs)
-                $existing_items = (int) $wpdb->get_var( $wpdb->prepare(
-                    "SELECT COUNT(*) FROM {$wpdb->prefix}cig_invoice_items WHERE invoice_id = %d",
-                    $new_invoice_id
-                ) );
-                if ( $existing_items > 0 ) continue;
             }
 
             $items = maybe_unserialize( $row['meta_value'] );
@@ -667,15 +664,6 @@ class CIG_Migrator {
 
             if ( ! $new_invoice_id ) continue;
 
-            if ( ! $this->dry_run ) {
-                // Skip if this invoice already has payments (idempotent re-runs)
-                $existing_payments = (int) $wpdb->get_var( $wpdb->prepare(
-                    "SELECT COUNT(*) FROM {$wpdb->prefix}cig_payments WHERE invoice_id = %d",
-                    $new_invoice_id
-                ) );
-                if ( $existing_payments > 0 ) continue;
-            }
-
             $payments = maybe_unserialize( $row['meta_value'] );
             if ( ! is_array( $payments ) || empty( $payments ) ) continue;
 
@@ -725,7 +713,7 @@ class CIG_Migrator {
 
         $posts = $wpdb->get_results(
             "SELECT ID FROM {$wpdb->posts}
-             WHERE post_type = 'cig_deposit' AND post_status NOT IN ('trash', 'auto-draft')
+             WHERE post_type = 'cig_deposit' AND post_status = 'publish'
              ORDER BY ID",
             ARRAY_A
         );
@@ -734,10 +722,6 @@ class CIG_Migrator {
 
         foreach ( $posts as $post ) {
             $post_id = (int) $post['ID'];
-
-            // Skip if already migrated (idempotent re-run safety)
-            if ( CIG_ID_Mapper::get_new_id( 'deposit', $post_id ) ) continue;
-
             $meta = $this->get_all_meta( $post_id, '_cig_' );
 
             $amount = (float) ( $meta['amount'] ?? 0 );
@@ -873,232 +857,6 @@ class CIG_Migrator {
     }
 
     /**
-     * Waterfall customer lookup: tax_id → email → phone → name → create new.
-     * Used by create_customers_from_invoices() and relink_customers().
-     */
-    private function find_or_create_customer_waterfall( $buyer, $legacy_term_id = null ) {
-        global $wpdb;
-        $table  = $wpdb->prefix . 'cig_customers';
-        $name   = trim( $buyer['name']   ?? '' );
-        $tax_id = trim( $buyer['tax_id'] ?? '' );
-        $email  = trim( $buyer['email']  ?? '' );
-        $phone  = trim( $buyer['phone']  ?? '' );
-
-        // 1. by tax_id
-        if ( $tax_id ) {
-            $id = (int) $wpdb->get_var( $wpdb->prepare(
-                "SELECT id FROM {$table} WHERE tax_id = %s LIMIT 1", $tax_id
-            ) );
-            if ( $id ) return $id;
-        }
-
-        // 2. by email
-        if ( $email ) {
-            $id = (int) $wpdb->get_var( $wpdb->prepare(
-                "SELECT id FROM {$table} WHERE email = %s LIMIT 1", $email
-            ) );
-            if ( $id ) return $id;
-        }
-
-        // 3. by phone
-        if ( $phone ) {
-            $id = (int) $wpdb->get_var( $wpdb->prepare(
-                "SELECT id FROM {$table} WHERE phone = %s LIMIT 1", $phone
-            ) );
-            if ( $id ) return $id;
-        }
-
-        // 4. by name (case-insensitive)
-        if ( $name ) {
-            $id = (int) $wpdb->get_var( $wpdb->prepare(
-                "SELECT id FROM {$table} WHERE LOWER(name) = LOWER(%s) LIMIT 1", $name
-            ) );
-            if ( $id ) return $id;
-        }
-
-        // 5. create new
-        if ( ! $name && ! $tax_id ) return null;
-
-        $wpdb->insert( $table, [
-            'legacy_term_id' => $legacy_term_id ?: null,
-            'name'           => $name,
-            'name_en'        => '',
-            'tax_id'         => $tax_id,
-            'address'        => trim( $buyer['address'] ?? '' ),
-            'phone'          => $phone,
-            'email'          => $email,
-        ] );
-
-        return $wpdb->insert_id ?: null;
-    }
-
-    /**
-     * Re-link invoices that have customer_id = NULL by running waterfall match
-     * against buyer_name / buyer_tax_id / buyer_phone / buyer_email.
-     * Returns number of invoices re-linked.
-     */
-    public function relink_customers() {
-        global $wpdb;
-        $prefix = $wpdb->prefix . 'cig_';
-        $linked = 0;
-
-        $invoices = $wpdb->get_results(
-            "SELECT id, buyer_name, buyer_tax_id, buyer_phone, buyer_email, buyer_address
-             FROM {$prefix}invoices
-             WHERE customer_id IS NULL",
-            ARRAY_A
-        );
-
-        foreach ( $invoices as $inv ) {
-            if ( $this->dry_run ) {
-                $linked++;
-                continue;
-            }
-
-            $buyer = [
-                'name'    => $inv['buyer_name'],
-                'tax_id'  => $inv['buyer_tax_id'],
-                'phone'   => $inv['buyer_phone'],
-                'email'   => $inv['buyer_email'],
-                'address' => $inv['buyer_address'],
-            ];
-
-            $customer_id = $this->find_or_create_customer_waterfall( $buyer );
-            if ( $customer_id ) {
-                $wpdb->update(
-                    $prefix . 'invoices',
-                    [ 'customer_id' => $customer_id ],
-                    [ 'id' => (int) $inv['id'] ]
-                );
-                $linked++;
-            }
-        }
-
-        return $linked;
-    }
-
-    /**
-     * Fix column name mismatches for hybrid installs (old plugin activated over new tables).
-     * Safe to run multiple times (idempotent WHERE conditions).
-     */
-    public function fix_column_renames() {
-        global $wpdb;
-        $prefix = $wpdb->prefix . 'cig_';
-
-        // wp_cig_invoice_items: product_name → name
-        $wpdb->query(
-            "UPDATE {$prefix}invoice_items
-             SET name = product_name
-             WHERE (name = '' OR name IS NULL) AND product_name IS NOT NULL AND product_name != ''"
-        );
-
-        // wp_cig_invoice_items: quantity → qty
-        $wpdb->query(
-            "UPDATE {$prefix}invoice_items
-             SET qty = quantity
-             WHERE qty IN (0, 1) AND quantity > 1"
-        );
-
-        // wp_cig_invoice_items: warranty_duration → warranty
-        $wpdb->query(
-            "UPDATE {$prefix}invoice_items
-             SET warranty = warranty_duration
-             WHERE (warranty = '' OR warranty IS NULL) AND warranty_duration IS NOT NULL AND warranty_duration != ''"
-        );
-
-        // wp_cig_invoice_items: image → image_url
-        $wpdb->query(
-            "UPDATE {$prefix}invoice_items
-             SET image_url = image
-             WHERE (image_url = '' OR image_url IS NULL) AND image IS NOT NULL AND image != ''"
-        );
-
-        // wp_cig_payments: date → payment_date
-        $wpdb->query(
-            "UPDATE {$prefix}payments
-             SET payment_date = DATE(`date`)
-             WHERE (payment_date IS NULL OR payment_date = '0000-00-00') AND `date` IS NOT NULL"
-        );
-
-        // Buyer fields from wp_postmeta (via legacy_post_id bridge)
-        $buyer_fields = [
-            'buyer_name'    => '_cig_buyer_name',
-            'buyer_tax_id'  => '_cig_buyer_tax_id',
-            'buyer_phone'   => '_cig_buyer_phone',
-            'buyer_address' => '_cig_buyer_address',
-            'buyer_email'   => '_cig_buyer_email',
-        ];
-        foreach ( $buyer_fields as $col => $meta_key ) {
-            $wpdb->query( $wpdb->prepare(
-                "UPDATE {$prefix}invoices i
-                 INNER JOIN {$wpdb->postmeta} pm
-                   ON pm.post_id = i.legacy_post_id AND pm.meta_key = %s
-                 SET i.{$col} = pm.meta_value
-                 WHERE (i.{$col} = '' OR i.{$col} IS NULL) AND i.legacy_post_id IS NOT NULL",
-                $meta_key
-            ) );
-        }
-
-        // Lifecycle value cleanup
-        $wpdb->query( "UPDATE {$prefix}invoices SET lifecycle_status = 'draft'    WHERE lifecycle_status = 'unfinished'" );
-        $wpdb->query( "UPDATE {$prefix}invoices SET lifecycle_status = 'sold'     WHERE lifecycle_status = 'completed'" );
-        $wpdb->query( "UPDATE {$prefix}invoices SET lifecycle_status = 'reserved' WHERE lifecycle_status = 'active'" );
-    }
-
-    /**
-     * Fix already-migrated reserved invoices that were incorrectly stored as 'active'.
-     * Returns number of rows updated.
-     */
-    public function fix_reserved_lifecycle() {
-        global $wpdb;
-        $prefix = $wpdb->prefix . 'cig_';
-
-        if ( $this->dry_run ) {
-            return (int) $wpdb->get_var(
-                "SELECT COUNT(*) FROM {$prefix}invoices WHERE lifecycle_status = 'active'"
-            );
-        }
-
-        return (int) $wpdb->query(
-            "UPDATE {$prefix}invoices SET lifecycle_status = 'reserved' WHERE lifecycle_status = 'active'"
-        );
-    }
-
-    /**
-     * Fix author_id references that store WP user IDs instead of CIG user IDs.
-     * Remaps invoices.author_id by JOINing on wp_cig_users.wp_user_id.
-     * Returns number of rows updated.
-     */
-    public function fix_author_refs() {
-        global $wpdb;
-        $prefix = $wpdb->prefix . 'cig_';
-
-        return (int) $wpdb->query(
-            "UPDATE {$prefix}invoices i
-             INNER JOIN {$prefix}users u ON u.wp_user_id = i.author_id
-             SET i.author_id = u.id
-             WHERE NOT EXISTS (
-                 SELECT 1 FROM {$prefix}users u2 WHERE u2.id = i.author_id
-             )"
-        );
-    }
-
-    /**
-     * Delete invoice items whose invoice_id has no matching invoice.
-     * Returns number of rows deleted.
-     */
-    public function fix_orphaned_items() {
-        global $wpdb;
-        $prefix = $wpdb->prefix . 'cig_';
-
-        return (int) $wpdb->query(
-            "DELETE ii FROM {$prefix}invoice_items ii
-             LEFT JOIN {$prefix}invoices i ON ii.invoice_id = i.id
-             WHERE i.id IS NULL"
-        );
-    }
-
-    /**
      * Rollback — drop all custom tables and clear mappings.
      */
     public static function rollback() {
@@ -1116,8 +874,5 @@ class CIG_Migrator {
         }
 
         delete_option( 'cig_db_version' );
-
-        // Recreate empty tables so the app (login, auth) continues to work
-        CIG_Activator::activate();
     }
 }
