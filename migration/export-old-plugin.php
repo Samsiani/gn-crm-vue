@@ -39,11 +39,8 @@ if ( ! $is_cli ) {
         http_response_code( 403 );
         die( 'Forbidden. Pass ?secret=TOKEN or run via WP-CLI.' );
     }
-    // Must be admin
-    if ( ! current_user_can( 'manage_options' ) ) {
-        http_response_code( 403 );
-        die( 'Forbidden. Admin access required.' );
-    }
+    // Note: no current_user_can() check — secret token is sufficient,
+    // and server-to-server requests have no WP session.
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
