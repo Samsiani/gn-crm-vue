@@ -25,16 +25,38 @@ class CIG_Company {
     public static function update( $data ) {
         global $wpdb;
         $table = self::table();
+
+        if ( ! is_array( $data ) ) {
+            return self::get();
+        }
+
         $fields = self::extract_fields( $data );
+
+        if ( empty( $fields ) ) {
+            return self::get();
+        }
 
         $exists = $wpdb->get_var( "SELECT id FROM {$table} LIMIT 1" );
         if ( $exists ) {
-            $wpdb->update( $table, $fields, [ 'id' => $exists ] );
+            $wpdb->update( $table, $fields, [ 'id' => $exists ], self::get_field_formats( $fields ), [ '%d' ] );
         } else {
-            $wpdb->insert( $table, $fields );
+            $wpdb->insert( $table, $fields, self::get_field_formats( $fields ) );
         }
 
         return self::get();
+    }
+
+    /**
+     * Returns wpdb format specifiers for the given fields array.
+     * Integer/boolean columns use %d; everything else uses %s.
+     */
+    private static function get_field_formats( $fields ) {
+        $int_cols = [ 'reservation_days', 'starting_invoice_number', 'hide_wp_admin_bar' ];
+        $formats  = [];
+        foreach ( array_keys( $fields ) as $col ) {
+            $formats[] = in_array( $col, $int_cols, true ) ? '%d' : '%s';
+        }
+        return $formats;
     }
 
     private static function hydrate( $row ) {
@@ -86,10 +108,16 @@ class CIG_Company {
             'login_footer_note'       => [ 'loginFooterNote', 'login_footer_note' ],
         ];
 
+        $int_cols = [ 'reservation_days', 'starting_invoice_number', 'hide_wp_admin_bar' ];
+
         foreach ( $map as $db_col => $keys ) {
             foreach ( $keys as $key ) {
                 if ( array_key_exists( $key, $data ) ) {
-                    $fields[ $db_col ] = $data[ $key ];
+                    $value = $data[ $key ];
+                    if ( in_array( $db_col, $int_cols, true ) ) {
+                        $value = (int) $value;
+                    }
+                    $fields[ $db_col ] = $value;
                     break;
                 }
             }
