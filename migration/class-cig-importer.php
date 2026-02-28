@@ -398,7 +398,7 @@ class CIG_Importer {
             'status'             => $status,
             'lifecycle_status'   => $lifecycle,
             'total_amount'       => (float) ( $inv['invoice_total'] ?? 0 ),
-            'paid_amount'        => (float) ( $inv['paid_amount'] ?? 0 ), // use authoritative value from export
+            'paid_amount'        => 0, // will be recalculated after payments are inserted
             'created_at'         => $created_at,
             'sold_date'          => $sold_date,
             'buyer_name'         => $inv['buyer_name'] ?? '',
@@ -505,9 +505,9 @@ class CIG_Importer {
             ] );
         }
 
-        // paid_amount was already set from the authoritative exported value above.
-        // Do NOT recalculate from _cig_payment_history — that log may contain
-        // stale/corrected entries whose sum exceeds the actual paid amount.
+        // Recalculate paid_amount from the just-inserted payment records (excludes consignment).
+        // The _cig_paid_amount meta may be absent in the old plugin, so we derive it from payments.
+        $this->recalculate_paid( $new_inv_id );
 
         // Record in id_map for idempotence
         if ( $legacy_id ) {
@@ -568,7 +568,6 @@ class CIG_Importer {
             'status'             => $status,
             'lifecycle_status'   => $lifecycle,
             'total_amount'       => (float) ( $inv['invoice_total'] ?? 0 ),
-            'paid_amount'        => (float) ( $inv['paid_amount'] ?? 0 ),
             'created_at'         => $created_at,
             'sold_date'          => $sold_date,
             'buyer_name'         => $inv['buyer_name'] ?? '',
@@ -663,7 +662,7 @@ class CIG_Importer {
     }
 
     /**
-     * Recalculate paid_amount from actual payment rows.
+     * Recalculate paid_amount from actual payment rows (excludes consignment).
      */
     private function recalculate_paid( int $invoice_id ): void {
         global $wpdb;
@@ -671,7 +670,8 @@ class CIG_Importer {
         $pay_table = $wpdb->prefix . 'cig_payments';
         $wpdb->query( $wpdb->prepare(
             "UPDATE {$inv_table} SET paid_amount = (
-                SELECT COALESCE(SUM(amount), 0) FROM {$pay_table} WHERE invoice_id = %d
+                SELECT COALESCE(SUM(amount), 0) FROM {$pay_table}
+                WHERE invoice_id = %d AND method != 'consignment'
              ) WHERE id = %d",
             $invoice_id, $invoice_id
         ) );
@@ -830,7 +830,7 @@ class CIG_Importer {
 
         $this->insert_items( $new_id, $inv['items'] ?? [] );
         $this->insert_payments( $new_id, $inv['payments'] ?? [] );
-        // Do NOT recalculate — paid_amount from JSON is authoritative
+        $this->recalculate_paid( $new_id );
 
         $legacy_id = (int) ( $inv['legacy_post_id'] ?? 0 );
         if ( $legacy_id ) {
@@ -861,7 +861,7 @@ class CIG_Importer {
 
         $wpdb->delete( $pay_table, [ 'invoice_id' => $existing_id ] );
         $this->insert_payments( $existing_id, $inv['payments'] ?? [] );
-        // paid_amount is set from JSON in prepare_invoice_fields — no recalculate needed
+        $this->recalculate_paid( $existing_id );
 
         return true;
     }

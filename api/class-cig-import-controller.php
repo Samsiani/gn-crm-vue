@@ -122,55 +122,34 @@ class CIG_Import_Controller extends CIG_REST_Controller {
 
     /**
      * POST /import/repair-paid
-     * Fetches export JSON and sets paid_amount on each invoice from the authoritative
-     * exported value (fixing incorrect recalculated values from payment history).
+     * Recalculates paid_amount on all invoices from their actual payment records.
+     * Excludes consignment payments (consistent with financial model).
+     * Safe to run multiple times.
      */
     public function repair_paid( WP_REST_Request $request ) {
-        $url = sanitize_url( get_option( 'cig_sync_url', '' ) );
-        if ( empty( $url ) ) {
-            return new WP_Error( 'cig_no_url', 'No sync URL configured. Set it in the Live Sync section first.', [ 'status' => 400 ] );
-        }
-
-        $response = wp_remote_get( $url, [ 'timeout' => 90, 'sslverify' => false ] );
-        if ( is_wp_error( $response ) ) {
-            return new WP_Error( 'cig_fetch_failed', $response->get_error_message(), [ 'status' => 502 ] );
-        }
-        $code = wp_remote_retrieve_response_code( $response );
-        if ( $code !== 200 ) {
-            return new WP_Error( 'cig_fetch_failed', "Remote returned HTTP {$code}", [ 'status' => 502 ] );
-        }
-        $data = json_decode( wp_remote_retrieve_body( $response ), true );
-        if ( ! is_array( $data ) || empty( $data['invoices'] ) ) {
-            return new WP_Error( 'cig_invalid_json', 'Invalid JSON from remote URL.', [ 'status' => 400 ] );
-        }
-
         global $wpdb;
-        $table   = $wpdb->prefix . 'cig_invoices';
-        $fixed   = 0;
-        $skipped = 0;
+        $inv_table = $wpdb->prefix . 'cig_invoices';
+        $pay_table = $wpdb->prefix . 'cig_payments';
 
-        foreach ( $data['invoices'] as $inv ) {
-            $inv_number  = trim( $inv['invoice_number'] ?? '' );
-            $paid_amount = (float) ( $inv['paid_amount'] ?? 0 );
-            if ( empty( $inv_number ) ) continue;
+        // Bulk recalculate paid_amount from payment records (excluding consignment)
+        $rows_before = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$inv_table}" );
 
-            $updated = $wpdb->update(
-                $table,
-                [ 'paid_amount' => $paid_amount ],
-                [ 'invoice_number' => $inv_number ]
-            );
-            if ( $updated ) $fixed++;
-            else $skipped++;
-        }
+        $wpdb->query(
+            "UPDATE {$inv_table} SET paid_amount = (
+                SELECT COALESCE(SUM(p.amount), 0)
+                FROM {$pay_table} p
+                WHERE p.invoice_id = {$inv_table}.id
+                  AND p.method != 'consignment'
+             )"
+        );
 
-        // Clear KPI cache
-        global $wpdb;
-        $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_cig_kpi_%'" );
+        // Clear all KPI transient caches
+        $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_cig_kpi%'" );
+        $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_cig_kpi%'" );
 
         return rest_ensure_response( [
-            'fixed'   => $fixed,
-            'skipped' => $skipped,
-            'total'   => count( $data['invoices'] ),
+            'fixed'   => $rows_before,
+            'message' => 'paid_amount recalculated from payment records (consignment excluded)',
         ] );
     }
 
