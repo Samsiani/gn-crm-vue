@@ -269,7 +269,7 @@ class CIG_Importer {
                     $exists = (int) $wpdb->get_var(
                         $wpdb->prepare(
                             "SELECT COUNT(*) FROM {$id_table}
-                             WHERE legacy_id = %d AND entity_type IN ('other_delivery', 'deposit') LIMIT 1",
+                             WHERE legacy_id = %d AND entity_type = 'other_delivery' LIMIT 1",
                             $legacy_id
                         )
                     );

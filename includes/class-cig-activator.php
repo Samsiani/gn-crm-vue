@@ -442,6 +442,28 @@ class CIG_Activator {
     }
 
     /**
+     * Ensure wp_cig_other_deliveries table exists (idempotent via dbDelta).
+     * Called on DB upgrade so installs that were activated before this table
+     * was introduced get it created automatically.
+     */
+    public static function add_other_deliveries_table() {
+        global $wpdb;
+        $charset = $wpdb->get_charset_collate();
+        $table   = $wpdb->prefix . 'cig_other_deliveries';
+
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta( "CREATE TABLE {$table} (
+            id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            delivery_date DATE NOT NULL,
+            amount        DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            note          TEXT,
+            created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_date (delivery_date)
+        ) $charset;" );
+    }
+
+    /**
      * Add content_hash + synced_at columns to wp_cig_invoices (DB version 1.7).
      * Idempotent: checks column existence before altering.
      */
