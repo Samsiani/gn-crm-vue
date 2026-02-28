@@ -136,6 +136,9 @@ class CIG_Import_Controller extends CIG_REST_Controller {
         $inv_table  = $wpdb->prefix . 'cig_invoices';
         $pay_table  = $wpdb->prefix . 'cig_payments';
         $item_table = $wpdb->prefix . 'cig_invoice_items';
+        $id_table   = $wpdb->prefix . 'cig_id_map';
+        $dep_table  = $wpdb->prefix . 'cig_deposits';
+        $del_table  = $wpdb->prefix . 'cig_other_deliveries';
 
         $rows = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$inv_table}" );
 
@@ -159,13 +162,51 @@ class CIG_Import_Controller extends CIG_REST_Controller {
              )"
         );
 
-        // 3. Clear all KPI transient caches
+        // 3. Migrate deposits from other_deliveries → deposits (pre-v4.4.79 imports used wrong table)
+        $migrated_deposits = 0;
+        $old_deliveries = $wpdb->get_results(
+            "SELECT od.*, idm.legacy_id
+             FROM {$del_table} od
+             INNER JOIN {$id_table} idm ON idm.entity_type = 'other_delivery' AND idm.new_id = od.id",
+            ARRAY_A
+        );
+        foreach ( (array) $old_deliveries as $od ) {
+            $legacy_id = (int) $od['legacy_id'];
+            // Skip if already migrated to deposits
+            $already = (int) $wpdb->get_var(
+                $wpdb->prepare( "SELECT COUNT(*) FROM {$dep_table} WHERE legacy_post_id = %d", $legacy_id )
+            );
+            if ( $already ) continue;
+
+            $wpdb->insert( $dep_table, [
+                'legacy_post_id' => $legacy_id,
+                'deposit_date'   => $od['delivery_date'],
+                'amount'         => (float) $od['amount'],
+                'type'           => 'credit',
+                'note'           => $od['note'] ?? '',
+            ] );
+            $new_dep_id = $wpdb->insert_id;
+            if ( $new_dep_id ) {
+                // Update id_map to new entity_type and new_id
+                $wpdb->query( $wpdb->prepare(
+                    "UPDATE {$id_table} SET entity_type = 'deposit', new_id = %d
+                     WHERE entity_type = 'other_delivery' AND legacy_id = %d",
+                    $new_dep_id, $legacy_id
+                ) );
+                // Remove orphan from other_deliveries
+                $wpdb->delete( $del_table, [ 'id' => (int) $od['id'] ] );
+                $migrated_deposits++;
+            }
+        }
+
+        // 4. Clear all KPI transient caches
         $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_cig_kpi%'" );
         $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_cig_kpi%'" );
 
         return rest_ensure_response( [
-            'fixed'   => $rows,
-            'message' => 'total_amount and paid_amount recalculated from items/payments',
+            'fixed'              => $rows,
+            'migrated_deposits'  => $migrated_deposits,
+            'message'            => 'total_amount and paid_amount recalculated; deposits migrated to correct table',
         ] );
     }
 
@@ -198,8 +239,9 @@ class CIG_Import_Controller extends CIG_REST_Controller {
      * Manually trigger a sync now. Body: { url?: string } — uses saved URL if omitted.
      */
     public function sync_run( WP_REST_Request $request ) {
-        $body = $request->get_json_params();
-        $url  = sanitize_url( $body['url'] ?? '' );
+        $body  = $request->get_json_params();
+        $url   = sanitize_url( $body['url'] ?? '' );
+        $force = ! empty( $body['force'] );
 
         require_once CIG_PLUGIN_DIR . 'migration/class-cig-sync.php';
 
@@ -210,7 +252,7 @@ class CIG_Import_Controller extends CIG_REST_Controller {
             return new WP_Error( 'cig_sync_no_url', 'No sync URL configured.', [ 'status' => 400 ] );
         }
 
-        $result = CIG_Sync::fetch_and_sync( $url );
+        $result = CIG_Sync::fetch_and_sync( $url, $force );
 
         if ( is_wp_error( $result ) ) {
             return $result;

@@ -256,19 +256,21 @@ class CIG_Importer {
 
     private function import_deposits( array $deposits ) {
         global $wpdb;
-        // Deposits from old plugin map to "Other Balance" (other_deliveries), not "External Balance"
-        $table    = $wpdb->prefix . 'cig_other_deliveries';
+        // Old-plugin deposits → External Balance (wp_cig_deposits), type=credit
+        $table    = $wpdb->prefix . 'cig_deposits';
         $id_table = $wpdb->prefix . 'cig_id_map';
 
         foreach ( $deposits as $d ) {
             try {
                 $legacy_id = (int) ( $d['legacy_post_id'] ?? 0 );
 
-                // Check if already imported
+                // Check if already imported — check both 'deposit' (current) and 'other_delivery'
+                // (old entity_type used before v4.4.79) to avoid duplicates on re-import
                 if ( $this->options['skip_duplicates'] && $legacy_id ) {
                     $exists = (int) $wpdb->get_var(
                         $wpdb->prepare(
-                            "SELECT new_id FROM {$id_table} WHERE entity_type = 'other_delivery' AND legacy_id = %d LIMIT 1",
+                            "SELECT COUNT(*) FROM {$id_table}
+                             WHERE legacy_id = %d AND entity_type IN ('deposit', 'other_delivery') LIMIT 1",
                             $legacy_id
                         )
                     );
@@ -278,19 +280,21 @@ class CIG_Importer {
                     }
                 }
 
-                $delivery_date = $d['deposit_date'] ?? '';
-                if ( empty( $delivery_date ) ) $delivery_date = date( 'Y-m-d' );
+                $deposit_date = $d['deposit_date'] ?? '';
+                if ( empty( $deposit_date ) ) $deposit_date = date( 'Y-m-d' );
 
                 $wpdb->insert( $table, [
-                    'delivery_date' => $delivery_date,
-                    'amount'        => (float) ( $d['amount'] ?? 0 ),
-                    'note'          => $d['note'] ?? '',
+                    'legacy_post_id' => $legacy_id ?: null,
+                    'deposit_date'   => $deposit_date,
+                    'amount'         => (float) ( $d['amount'] ?? 0 ),
+                    'type'           => 'credit',
+                    'note'           => $d['note'] ?? '',
                 ] );
                 $new_id = $wpdb->insert_id;
 
                 if ( $new_id && $legacy_id ) {
                     $wpdb->insert( $id_table, [
-                        'entity_type' => 'other_delivery',
+                        'entity_type' => 'deposit',
                         'legacy_id'   => $legacy_id,
                         'new_id'      => $new_id,
                     ] );
@@ -452,7 +456,7 @@ class CIG_Importer {
                 'sku'              => $item['sku'] ?? '',
                 'description'      => $item['description'] ?? '',
                 'image_url'        => $item['image_url'] ?? '',
-                'qty'              => (float) ( $item['qty'] ?? 1 ),
+                'qty'              => (float) ( $item['qty'] ?? ( $item['quantity'] ?? 1 ) ),
                 'price'            => (float) ( $item['price'] ?? 0 ),
                 'total'            => (float) ( $item['total'] ?? 0 ),
                 'item_status'      => $item_status,
@@ -760,7 +764,7 @@ class CIG_Importer {
      * @param array $data Parsed JSON export (must include 'invoices', optionally 'users', 'customers').
      * @return array { new, updated, skipped, errors[], duration_ms }
      */
-    public function sync( array $data ): array {
+    public function sync( array $data, bool $force = false ): array {
         $start = microtime( true );
 
         // Reset class-level results for this run (used by import_users/customers/deposits)
@@ -805,7 +809,8 @@ class CIG_Importer {
                     $new_id = $this->sync_insert( $inv, $new_hash );
                     if ( $new_id ) $invoice_results['new']++;
                     else $invoice_results['errors'][] = '#' . $inv_number . ': insert failed — ' . $wpdb->last_error;
-                } elseif ( ! empty( $new_hash ) && $existing['content_hash'] === $new_hash ) {
+                } elseif ( ! $force && ! empty( $new_hash ) && $existing['content_hash'] === $new_hash ) {
+                    // Skip only when NOT force-syncing AND hash matches (unchanged)
                     $invoice_results['skipped']++;
                 } else {
                     $ok = $this->sync_update( (int) $existing['id'], $inv, $new_hash );

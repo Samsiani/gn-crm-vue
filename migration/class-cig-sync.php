@@ -34,7 +34,7 @@ class CIG_Sync {
      * @param string $url Remote export URL.
      * @return array|WP_Error
      */
-    public static function fetch_and_sync( string $url ) {
+    public static function fetch_and_sync( string $url, bool $force = false ) {
         $start = microtime( true );
 
         $response = wp_remote_get( $url, [
@@ -67,7 +67,7 @@ class CIG_Sync {
         // Run the sync
         require_once CIG_PLUGIN_DIR . 'migration/class-cig-importer.php';
         $importer = new CIG_Importer();
-        $results  = $importer->sync( $data );
+        $results  = $importer->sync( $data, $force );
 
         $log = self::make_log( 'success', '', $results, $start );
         self::save_log( $log );
