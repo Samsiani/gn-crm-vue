@@ -10,6 +10,12 @@ class CIG_Loader {
         // Allow JWT auth via Authorization header (some hosts strip it)
         add_filter( 'rest_pre_dispatch', [ $this, 'set_jwt_user' ], 10, 3 );
 
+        // Bypass WordPress cookie nonce check when a JWT is present.
+        // Without this, requests that carry both a valid auth cookie AND a JWT
+        // (but no X-WP-Nonce) get rejected with 403 "Cookie check failed"
+        // because rest_cookie_check_errors runs before our RBAC callbacks.
+        add_filter( 'rest_authentication_errors', [ $this, 'bypass_cookie_check_for_jwt' ], 99 );
+
         // Add Cache-Control headers for read-heavy GET endpoints
         add_filter( 'rest_post_dispatch', function( $response, $server, $request ) {
             if ( $request->get_method() !== 'GET' ) {
@@ -43,6 +49,33 @@ class CIG_Loader {
         foreach ( $controllers as $controller ) {
             $controller->register_routes();
         }
+    }
+
+    /**
+     * If the request carries a Bearer JWT, suppress the WP cookie nonce error.
+     * WordPress fires rest_cookie_check_errors (priority 100) which returns 403
+     * when a valid auth cookie exists but no X-WP-Nonce is sent. This happens
+     * after login because wp_set_auth_cookie() sets the cookie on the response,
+     * and the very next request carries that cookie alongside the JWT.
+     * We run at priority 99 (just before the cookie check) and return true to
+     * short-circuit the error — our own JWT validation in the RBAC permission
+     * callbacks will handle authentication.
+     */
+    public function bypass_cookie_check_for_jwt( $result ) {
+        if ( ! empty( $result ) ) {
+            return $result;
+        }
+
+        $auth = isset( $_SERVER['HTTP_AUTHORIZATION'] ) ? $_SERVER['HTTP_AUTHORIZATION'] : '';
+        if ( empty( $auth ) && isset( $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ) ) {
+            $auth = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+        }
+
+        if ( ! empty( $auth ) && preg_match( '/^Bearer\s+.+$/i', $auth ) ) {
+            return true;
+        }
+
+        return $result;
     }
 
     /**
