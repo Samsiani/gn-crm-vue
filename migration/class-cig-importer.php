@@ -256,8 +256,9 @@ class CIG_Importer {
 
     private function import_deposits( array $deposits ) {
         global $wpdb;
-        $table     = $wpdb->prefix . 'cig_deposits';
-        $id_table  = $wpdb->prefix . 'cig_id_map';
+        // Deposits from old plugin map to "Other Balance" (other_deliveries), not "External Balance"
+        $table    = $wpdb->prefix . 'cig_other_deliveries';
+        $id_table = $wpdb->prefix . 'cig_id_map';
 
         foreach ( $deposits as $d ) {
             try {
@@ -267,7 +268,7 @@ class CIG_Importer {
                 if ( $this->options['skip_duplicates'] && $legacy_id ) {
                     $exists = (int) $wpdb->get_var(
                         $wpdb->prepare(
-                            "SELECT new_id FROM {$id_table} WHERE entity_type = 'deposit' AND legacy_id = %d LIMIT 1",
+                            "SELECT new_id FROM {$id_table} WHERE entity_type = 'other_delivery' AND legacy_id = %d LIMIT 1",
                             $legacy_id
                         )
                     );
@@ -277,20 +278,19 @@ class CIG_Importer {
                     }
                 }
 
-                $deposit_date = $d['deposit_date'] ?? '';
-                if ( empty( $deposit_date ) ) $deposit_date = date( 'Y-m-d' );
+                $delivery_date = $d['deposit_date'] ?? '';
+                if ( empty( $delivery_date ) ) $delivery_date = date( 'Y-m-d' );
 
                 $wpdb->insert( $table, [
-                    'deposit_date' => $deposit_date,
-                    'amount'       => (float) ( $d['amount'] ?? 0 ),
-                    'type'         => 'credit',
-                    'note'         => $d['note'] ?? '',
+                    'delivery_date' => $delivery_date,
+                    'amount'        => (float) ( $d['amount'] ?? 0 ),
+                    'note'          => $d['note'] ?? '',
                 ] );
                 $new_id = $wpdb->insert_id;
 
                 if ( $new_id && $legacy_id ) {
                     $wpdb->insert( $id_table, [
-                        'entity_type' => 'deposit',
+                        'entity_type' => 'other_delivery',
                         'legacy_id'   => $legacy_id,
                         'new_id'      => $new_id,
                     ] );
