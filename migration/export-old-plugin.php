@@ -232,9 +232,10 @@ function cig_export_invoices() {
             $sold_date = $ts ? date( 'Y-m-d', $ts ) : null;
         }
 
-        $invoices[] = [
+        $invoice_row = [
             'legacy_post_id'    => $post_id,
             'post_date'         => $post_date,
+            'post_modified'     => $post->post_modified,
             'post_status'       => $post->post_status,
             'invoice_number'    => cig_export_meta( $post_id, '_cig_invoice_number' ) ?: '',
             'invoice_status'    => cig_export_meta( $post_id, '_cig_invoice_status' ) ?: 'standard',
@@ -256,6 +257,30 @@ function cig_export_invoices() {
             'items'             => $export_items,
             'payments'          => $export_payments,
         ];
+
+        // MD5 hash of all mutable fields — used for change detection on sync
+        // post_modified alone is unreliable (wp_postmeta updates don't touch it)
+        $invoice_row['content_hash'] = md5( json_encode( [
+            $invoice_row['post_status'],
+            $invoice_row['invoice_status'],
+            $invoice_row['lifecycle_status'],
+            $invoice_row['invoice_total'],
+            $invoice_row['paid_amount'],
+            $invoice_row['buyer_name'],
+            $invoice_row['buyer_tax_id'],
+            $invoice_row['buyer_phone'],
+            $invoice_row['buyer_address'],
+            $invoice_row['buyer_email'],
+            $invoice_row['general_note'],
+            $invoice_row['consultant_note'],
+            $invoice_row['accountant_note'],
+            $invoice_row['acc_status'],
+            $invoice_row['sold_date'],
+            $invoice_row['items'],
+            $invoice_row['payments'],
+        ] ) );
+
+        $invoices[] = $invoice_row;
     }
 
     return $invoices;
@@ -270,7 +295,7 @@ $invoices  = cig_export_invoices();
 
 $output = [
     'meta' => [
-        'version'     => '1.0',
+        'version'     => '1.1',
         'exported_at' => date( 'c' ),
         'source_url'  => get_site_url(),
         'counts'      => [

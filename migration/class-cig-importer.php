@@ -530,6 +530,326 @@ class CIG_Importer {
         $this->results['invoices']['inserted']++;
     }
 
+    // ── Shared helpers (used by both run() and sync()) ────────────────────────
+
+    /**
+     * Map all mutable invoice fields from JSON to DB column array.
+     * Does NOT include invoice_number, legacy_post_id, paid_amount, content_hash, synced_at.
+     */
+    private function prepare_invoice_fields( array $inv ): array {
+        $old_author_id = (int) ( $inv['author_wp_user_id'] ?? 0 );
+        $author_id     = $old_author_id && isset( $this->user_map[ $old_author_id ] )
+                         ? $this->user_map[ $old_author_id ] : null;
+
+        $customer_post_id = (int) ( $inv['customer_post_id'] ?? 0 );
+        $customer_id      = null;
+        if ( $customer_post_id && isset( $this->customer_map[ $customer_post_id ] ) ) {
+            $customer_id = $this->customer_map[ $customer_post_id ];
+        }
+        if ( ! $customer_id ) {
+            $customer_id = $this->find_customer_by_buyer( $inv );
+        }
+
+        $raw_lifecycle = strtolower( trim( $inv['lifecycle_status'] ?? 'draft' ) );
+        $lifecycle_map = [
+            'unfinished' => 'draft',  'draft'     => 'draft',
+            'reserved'   => 'reserved', 'completed' => 'sold', 'sold' => 'sold',
+            'canceled'   => 'canceled', 'cancelled' => 'canceled', 'active' => 'reserved',
+        ];
+        $lifecycle = $lifecycle_map[ $raw_lifecycle ] ?? 'draft';
+
+        $acc_status = strtolower( trim( $inv['acc_status'] ?? '' ) );
+        $acc_flags  = self::ACC_MAP[ $acc_status ] ?? [
+            'is_rs_uploaded' => 0, 'is_credit_checked' => 0,
+            'is_receipt_checked' => 0, 'is_corrected' => 0,
+        ];
+
+        $status     = in_array( $inv['invoice_status'] ?? 'standard', [ 'standard', 'fictive' ], true )
+                      ? $inv['invoice_status'] : 'standard';
+        $post_date  = $inv['post_date'] ?? '';
+        $created_at = $post_date ? substr( $post_date, 0, 10 ) : date( 'Y-m-d' );
+        $sold_date  = ! empty( $inv['sold_date'] ) ? $inv['sold_date'] : null;
+
+        return [
+            'customer_id'        => $customer_id,
+            'author_id'          => $author_id,
+            'status'             => $status,
+            'lifecycle_status'   => $lifecycle,
+            'total_amount'       => (float) ( $inv['invoice_total'] ?? 0 ),
+            'created_at'         => $created_at,
+            'sold_date'          => $sold_date,
+            'buyer_name'         => $inv['buyer_name'] ?? '',
+            'buyer_tax_id'       => $inv['buyer_tax_id'] ?? '',
+            'buyer_phone'        => $inv['buyer_phone'] ?? '',
+            'buyer_address'      => $inv['buyer_address'] ?? '',
+            'buyer_email'        => $inv['buyer_email'] ?? '',
+            'general_note'       => $inv['general_note'] ?? '',
+            'consultant_note'    => $inv['consultant_note'] ?? '',
+            'accountant_note'    => $inv['accountant_note'] ?? '',
+            'is_rs_uploaded'     => $acc_flags['is_rs_uploaded'],
+            'is_credit_checked'  => $acc_flags['is_credit_checked'],
+            'is_receipt_checked' => $acc_flags['is_receipt_checked'],
+            'is_corrected'       => $acc_flags['is_corrected'],
+        ];
+    }
+
+    /**
+     * Insert invoice items for a given invoice_id.
+     */
+    private function insert_items( int $invoice_id, array $items ): void {
+        global $wpdb;
+        $item_table = $wpdb->prefix . 'cig_invoice_items';
+        $sort = 0;
+        foreach ( $items as $item ) {
+            $item_status = $item['item_status'] ?? ( $item['status'] ?? 'none' );
+            if ( ! in_array( $item_status, [ 'none', 'reserved', 'canceled', 'sold' ], true ) ) {
+                $item_status = 'none';
+            }
+            $item_sku   = trim( $item['sku'] ?? '' );
+            $product_id = null;
+            if ( $item_sku ) {
+                $product_id = (int) $wpdb->get_var(
+                    $wpdb->prepare( "SELECT id FROM {$wpdb->prefix}cig_products WHERE sku = %s LIMIT 1", $item_sku )
+                ) ?: null;
+            }
+            $wpdb->insert( $item_table, [
+                'invoice_id'        => $invoice_id,
+                'sort_order'        => $sort++,
+                'product_id'        => $product_id,
+                'legacy_product_id' => isset( $item['product_id'] ) ? (int) $item['product_id'] : null,
+                'name'              => $item['name'] ?? '',
+                'brand'             => $item['brand'] ?? '',
+                'sku'               => $item['sku'] ?? '',
+                'description'       => $item['description'] ?? '',
+                'image_url'         => $item['image_url'] ?? '',
+                'qty'               => (float) ( $item['qty'] ?? 1 ),
+                'price'             => (float) ( $item['price'] ?? 0 ),
+                'total'             => (float) ( $item['total'] ?? 0 ),
+                'item_status'       => $item_status,
+                'reservation_days'  => (int) ( $item['reservation_days'] ?? 0 ),
+                'warranty'          => $item['warranty'] ?? '',
+            ] );
+        }
+    }
+
+    /**
+     * Insert payments for a given invoice_id.
+     */
+    private function insert_payments( int $invoice_id, array $payments ): void {
+        global $wpdb;
+        $pay_table = $wpdb->prefix . 'cig_payments';
+        foreach ( $payments as $pay ) {
+            $method = $pay['method'] ?? 'cash';
+            if ( ! in_array( $method, self::ALLOWED_METHODS, true ) ) $method = 'other';
+
+            $pay_date_raw = $pay['date'] ?? ( $pay['payment_date'] ?? '' );
+            $payment_date = date( 'Y-m-d' );
+            if ( ! empty( $pay_date_raw ) && $pay_date_raw !== '0000-00-00' ) {
+                if ( is_numeric( $pay_date_raw ) ) {
+                    $payment_date = date( 'Y-m-d', (int) $pay_date_raw );
+                } else {
+                    $ts = strtotime( $pay_date_raw );
+                    if ( ! $ts && preg_match( '#^(\d{1,2})/(\d{1,2})/(\d{4})#', $pay_date_raw, $m ) ) {
+                        $ts = mktime( 0, 0, 0, (int) $m[2], (int) $m[1], (int) $m[3] );
+                    }
+                    if ( $ts && $ts > 0 ) $payment_date = date( 'Y-m-d', $ts );
+                }
+            }
+            $old_pay_user = (int) ( $pay['user_id'] ?? 0 );
+            $pay_user_id  = $old_pay_user && isset( $this->user_map[ $old_pay_user ] )
+                            ? $this->user_map[ $old_pay_user ] : null;
+            $wpdb->insert( $pay_table, [
+                'invoice_id'   => $invoice_id,
+                'payment_date' => $payment_date,
+                'amount'       => (float) ( $pay['amount'] ?? 0 ),
+                'method'       => $method,
+                'comment'      => $pay['comment'] ?? '',
+                'user_id'      => $pay_user_id,
+            ] );
+        }
+    }
+
+    /**
+     * Recalculate paid_amount from actual payment rows.
+     */
+    private function recalculate_paid( int $invoice_id ): void {
+        global $wpdb;
+        $inv_table = $wpdb->prefix . 'cig_invoices';
+        $pay_table = $wpdb->prefix . 'cig_payments';
+        $wpdb->query( $wpdb->prepare(
+            "UPDATE {$inv_table} SET paid_amount = (
+                SELECT COALESCE(SUM(amount), 0) FROM {$pay_table} WHERE invoice_id = %d
+             ) WHERE id = %d",
+            $invoice_id, $invoice_id
+        ) );
+    }
+
+    /**
+     * Populate $this->user_map from export data (lookup-only, no inserts).
+     * Used in sync() to avoid double-importing users.
+     */
+    private function build_user_map( array $users ): void {
+        global $wpdb;
+        $user_table = $wpdb->prefix . 'cig_users';
+        foreach ( $users as $u ) {
+            $old_wp_id = (int) ( $u['wp_user_id'] ?? 0 );
+            if ( ! $old_wp_id ) continue;
+            $wp_user = get_user_by( 'login', $u['login'] ?? '' );
+            if ( ! $wp_user && ! empty( $u['email'] ) ) {
+                $wp_user = get_user_by( 'email', $u['email'] );
+            }
+            if ( $wp_user ) {
+                $cig_id = (int) $wpdb->get_var(
+                    $wpdb->prepare( "SELECT id FROM {$user_table} WHERE wp_user_id = %d LIMIT 1", $wp_user->ID )
+                );
+                if ( $cig_id ) $this->user_map[ $old_wp_id ] = $cig_id;
+            }
+        }
+    }
+
+    /**
+     * Populate $this->customer_map from export data (lookup-only, no inserts).
+     * Used in sync() to avoid double-importing customers.
+     */
+    private function build_customer_map( array $customers ): void {
+        global $wpdb;
+        $cust_table = $wpdb->prefix . 'cig_customers';
+        foreach ( $customers as $c ) {
+            $legacy_id = (int) ( $c['legacy_post_id'] ?? 0 );
+            if ( ! $legacy_id ) continue;
+            $cig_id = null;
+            if ( ! empty( $c['tax_id'] ) ) {
+                $cig_id = (int) $wpdb->get_var(
+                    $wpdb->prepare( "SELECT id FROM {$cust_table} WHERE tax_id = %s LIMIT 1", $c['tax_id'] )
+                ) ?: null;
+            }
+            if ( ! $cig_id && ! empty( $c['phone'] ) ) {
+                $cig_id = (int) $wpdb->get_var(
+                    $wpdb->prepare( "SELECT id FROM {$cust_table} WHERE phone = %s LIMIT 1", $c['phone'] )
+                ) ?: null;
+            }
+            if ( ! $cig_id && ! empty( $c['name'] ) ) {
+                $cig_id = (int) $wpdb->get_var(
+                    $wpdb->prepare( "SELECT id FROM {$cust_table} WHERE name = %s LIMIT 1", $c['name'] )
+                ) ?: null;
+            }
+            if ( $cig_id ) $this->customer_map[ $legacy_id ] = $cig_id;
+        }
+    }
+
+    // ── Sync (upsert) ──────────────────────────────────────────────────────────
+
+    /**
+     * Sync invoices from export data: insert new, update changed, skip unchanged.
+     * Compares content_hash — only actually-changed invoices are updated.
+     * Does NOT import users/customers/deposits (assumes already imported).
+     *
+     * @param array $data Parsed JSON export (must include 'invoices', optionally 'users', 'customers').
+     * @return array { new, updated, skipped, errors[], duration_ms }
+     */
+    public function sync( array $data ): array {
+        $start   = microtime( true );
+        $results = [ 'new' => 0, 'updated' => 0, 'skipped' => 0, 'errors' => [] ];
+
+        // Build maps for author/customer resolution (lookup only)
+        $this->build_user_map( $data['users'] ?? [] );
+        $this->build_customer_map( $data['customers'] ?? [] );
+
+        $inv_table = $wpdb_ref = null;
+        global $wpdb;
+        $inv_table = $wpdb->prefix . 'cig_invoices';
+
+        foreach ( $data['invoices'] ?? [] as $inv ) {
+            $inv_number = trim( $inv['invoice_number'] ?? '' );
+            $new_hash   = $inv['content_hash'] ?? '';
+            if ( empty( $inv_number ) ) continue;
+
+            try {
+                $existing = $wpdb->get_row(
+                    $wpdb->prepare(
+                        "SELECT id, content_hash FROM {$inv_table} WHERE invoice_number = %s LIMIT 1",
+                        $inv_number
+                    ),
+                    ARRAY_A
+                );
+
+                if ( ! $existing ) {
+                    $new_id = $this->sync_insert( $inv, $new_hash );
+                    if ( $new_id ) $results['new']++;
+                    else $results['errors'][] = '#' . $inv_number . ': insert failed — ' . $wpdb->last_error;
+                } elseif ( ! empty( $new_hash ) && $existing['content_hash'] === $new_hash ) {
+                    $results['skipped']++;
+                } else {
+                    $ok = $this->sync_update( (int) $existing['id'], $inv, $new_hash );
+                    if ( $ok ) $results['updated']++;
+                    else $results['errors'][] = '#' . $inv_number . ': update failed — ' . $wpdb->last_error;
+                }
+            } catch ( Exception $e ) {
+                $results['errors'][] = '#' . $inv_number . ': ' . $e->getMessage();
+            }
+        }
+
+        // Re-link customers and products after sync
+        self::relink();
+
+        $results['duration_ms'] = (int) round( ( microtime( true ) - $start ) * 1000 );
+        return $results;
+    }
+
+    private function sync_insert( array $inv, string $hash ): int {
+        global $wpdb;
+        $inv_table = $wpdb->prefix . 'cig_invoices';
+        $id_table  = $wpdb->prefix . 'cig_id_map';
+
+        $fields = $this->prepare_invoice_fields( $inv );
+        $fields['invoice_number'] = trim( $inv['invoice_number'] );
+        $fields['legacy_post_id'] = ( (int) ( $inv['legacy_post_id'] ?? 0 ) ) ?: null;
+        $fields['paid_amount']    = 0;
+        $fields['content_hash']   = $hash;
+        $fields['synced_at']      = current_time( 'mysql' );
+
+        $wpdb->insert( $inv_table, $fields );
+        $new_id = (int) $wpdb->insert_id;
+        if ( ! $new_id ) return 0;
+
+        $this->insert_items( $new_id, $inv['items'] ?? [] );
+        $this->insert_payments( $new_id, $inv['payments'] ?? [] );
+        $this->recalculate_paid( $new_id );
+
+        $legacy_id = (int) ( $inv['legacy_post_id'] ?? 0 );
+        if ( $legacy_id ) {
+            // Upsert id_map (may already exist from initial import)
+            $wpdb->query( $wpdb->prepare(
+                "INSERT IGNORE INTO {$id_table} (entity_type, legacy_id, new_id) VALUES ('invoice', %d, %d)",
+                $legacy_id, $new_id
+            ) );
+        }
+        return $new_id;
+    }
+
+    private function sync_update( int $existing_id, array $inv, string $hash ): bool {
+        global $wpdb;
+        $inv_table  = $wpdb->prefix . 'cig_invoices';
+        $item_table = $wpdb->prefix . 'cig_invoice_items';
+        $pay_table  = $wpdb->prefix . 'cig_payments';
+
+        $fields = $this->prepare_invoice_fields( $inv );
+        $fields['content_hash'] = $hash;
+        $fields['synced_at']    = current_time( 'mysql' );
+
+        $wpdb->update( $inv_table, $fields, [ 'id' => $existing_id ] );
+
+        // Replace items and payments wholesale
+        $wpdb->delete( $item_table, [ 'invoice_id' => $existing_id ] );
+        $this->insert_items( $existing_id, $inv['items'] ?? [] );
+
+        $wpdb->delete( $pay_table, [ 'invoice_id' => $existing_id ] );
+        $this->insert_payments( $existing_id, $inv['payments'] ?? [] );
+
+        $this->recalculate_paid( $existing_id );
+        return true;
+    }
+
     /**
      * Waterfall customer lookup by buyer info on the invoice itself.
      */

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: CIG Headless API
  * Description: Custom Invoice/Group headless REST API backend for Vue.js SPA
- * Version: 4.4.72
+ * Version: 4.4.73
  * Author: GN Industrial
  * Text Domain: cig-headless
  * Requires PHP: 7.4
@@ -13,8 +13,8 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'CIG_VERSION', '4.4.72' );
-define( 'CIG_DB_VERSION', '1.6' );
+define( 'CIG_VERSION', '4.4.73' );
+define( 'CIG_DB_VERSION', '1.7' );
 define( 'CIG_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'CIG_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'CIG_API_NAMESPACE', 'cig/v1' );
@@ -72,6 +72,24 @@ require_once CIG_PLUGIN_DIR . 'api/class-cig-import-controller.php';
 register_activation_hook( __FILE__, [ 'CIG_Activator', 'activate' ] );
 register_deactivation_hook( __FILE__, [ 'CIG_Deactivator', 'deactivate' ] );
 
+// Register custom cron interval (every 10 minutes)
+add_filter( 'cron_schedules', function( $schedules ) {
+    if ( ! isset( $schedules['cig_10min'] ) ) {
+        $schedules['cig_10min'] = [
+            'interval' => 600,
+            'display'  => __( 'Every 10 Minutes (CIG Sync)' ),
+        ];
+    }
+    return $schedules;
+} );
+
+// Cron hook — runs sync when scheduled
+add_action( 'cig_sync_cron', function() {
+    require_once CIG_PLUGIN_DIR . 'migration/class-cig-sync.php';
+    require_once CIG_PLUGIN_DIR . 'migration/class-cig-importer.php';
+    CIG_Sync::run();
+} );
+
 // Initialize plugin
 add_action( 'plugins_loaded', function() {
     // Run DB upgrade if version changed
@@ -81,6 +99,7 @@ add_action( 'plugins_loaded', function() {
         CIG_Activator::add_performance_indexes();
         CIG_Activator::add_notifications_table();
         CIG_Activator::add_login_footer_column();
+        CIG_Activator::add_sync_columns();
         update_option( 'cig_db_version', CIG_DB_VERSION );
     }
 

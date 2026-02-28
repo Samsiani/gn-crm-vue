@@ -441,6 +441,29 @@ class CIG_Activator {
         ) $charset;" );
     }
 
+    /**
+     * Add content_hash + synced_at columns to wp_cig_invoices (DB version 1.7).
+     * Idempotent: checks column existence before altering.
+     */
+    public static function add_sync_columns() {
+        global $wpdb;
+        $table = $wpdb->prefix . 'cig_invoices';
+
+        $wpdb->suppress_errors( true );
+
+        $columns  = $wpdb->get_results( "DESCRIBE {$table}", ARRAY_A );
+        $existing = array_column( $columns, 'Field' );
+
+        if ( ! in_array( 'content_hash', $existing, true ) ) {
+            $wpdb->query( "ALTER TABLE {$table} ADD COLUMN content_hash VARCHAR(32) NULL" );
+        }
+        if ( ! in_array( 'synced_at', $existing, true ) ) {
+            $wpdb->query( "ALTER TABLE {$table} ADD COLUMN synced_at DATETIME NULL" );
+        }
+
+        $wpdb->suppress_errors( false );
+    }
+
     private static function seed_company() {
         global $wpdb;
         $table = $wpdb->prefix . 'cig_company';
