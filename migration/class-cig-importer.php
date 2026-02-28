@@ -256,21 +256,20 @@ class CIG_Importer {
 
     private function import_deposits( array $deposits ) {
         global $wpdb;
-        // Old-plugin deposits → External Balance (wp_cig_deposits), type=credit
-        $table    = $wpdb->prefix . 'cig_deposits';
+        // Old-plugin deposits → Other Balance (wp_cig_other_deliveries)
+        $table    = $wpdb->prefix . 'cig_other_deliveries';
         $id_table = $wpdb->prefix . 'cig_id_map';
 
         foreach ( $deposits as $d ) {
             try {
                 $legacy_id = (int) ( $d['legacy_post_id'] ?? 0 );
 
-                // Check if already imported — check both 'deposit' (current) and 'other_delivery'
-                // (old entity_type used before v4.4.79) to avoid duplicates on re-import
+                // Check both entity_types to avoid duplicates regardless of which version imported
                 if ( $this->options['skip_duplicates'] && $legacy_id ) {
                     $exists = (int) $wpdb->get_var(
                         $wpdb->prepare(
                             "SELECT COUNT(*) FROM {$id_table}
-                             WHERE legacy_id = %d AND entity_type IN ('deposit', 'other_delivery') LIMIT 1",
+                             WHERE legacy_id = %d AND entity_type IN ('other_delivery', 'deposit') LIMIT 1",
                             $legacy_id
                         )
                     );
@@ -280,21 +279,19 @@ class CIG_Importer {
                     }
                 }
 
-                $deposit_date = $d['deposit_date'] ?? '';
-                if ( empty( $deposit_date ) ) $deposit_date = date( 'Y-m-d' );
+                $delivery_date = $d['deposit_date'] ?? '';
+                if ( empty( $delivery_date ) ) $delivery_date = date( 'Y-m-d' );
 
                 $wpdb->insert( $table, [
-                    'legacy_post_id' => $legacy_id ?: null,
-                    'deposit_date'   => $deposit_date,
-                    'amount'         => (float) ( $d['amount'] ?? 0 ),
-                    'type'           => 'credit',
-                    'note'           => $d['note'] ?? '',
+                    'delivery_date' => $delivery_date,
+                    'amount'        => (float) ( $d['amount'] ?? 0 ),
+                    'note'          => $d['note'] ?? '',
                 ] );
                 $new_id = $wpdb->insert_id;
 
                 if ( $new_id && $legacy_id ) {
                     $wpdb->insert( $id_table, [
-                        'entity_type' => 'deposit',
+                        'entity_type' => 'other_delivery',
                         'legacy_id'   => $legacy_id,
                         'new_id'      => $new_id,
                     ] );
