@@ -60,7 +60,6 @@ class CIG_Company_Controller extends CIG_REST_Controller {
                 'gif'          => 'image/gif',
                 'png'          => 'image/png',
                 'webp'         => 'image/webp',
-                'svg'          => 'image/svg+xml',
             ],
         ];
 

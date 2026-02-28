@@ -18,9 +18,9 @@ class CIG_Notification {
      * @param string $icon    Lucide icon name
      * @param string $link    Frontend route, e.g. /invoices/42
      */
-    public static function create( string $type, string $title, string $message, string $icon = 'bell', string $link = '' ): void {
+    public static function create( string $type, string $title, string $message, string $icon = 'bell', string $link = '' ): bool {
         global $wpdb;
-        $wpdb->insert( self::table(), [
+        $result = $wpdb->insert( self::table(), [
             'type'       => $type,
             'title'      => $title,
             'message'    => $message,
@@ -29,6 +29,7 @@ class CIG_Notification {
             'is_read'    => 0,
             'created_at' => current_time( 'mysql' ),
         ] );
+        return $result !== false;
     }
 
     // ── List ───────────────────────────────────────────────────────────────────

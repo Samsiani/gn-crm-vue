@@ -83,7 +83,11 @@ class CIG_Deposit {
 
     public static function delete( $id ) {
         global $wpdb;
-        return $wpdb->delete( self::table(), [ 'id' => $id ] );
+        $result = $wpdb->delete( self::table(), [ 'id' => $id ] );
+        if ( $result === false ) {
+            return new WP_Error( 'cig_delete_failed', 'Failed to delete deposit.', [ 'status' => 500 ] );
+        }
+        return true;
     }
 
     /**
