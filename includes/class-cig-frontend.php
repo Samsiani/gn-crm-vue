@@ -22,6 +22,22 @@ class CIG_Frontend {
         add_action( 'wp_footer',          [ $this, 'end_footer_buffer' ], PHP_INT_MAX );
         add_action( 'wp_print_styles',    [ $this, 'dequeue_theme_styles' ], 9999 );
         add_action( 'wp_print_scripts',   [ $this, 'dequeue_theme_scripts' ], 9999 );
+        // Prevent browser from caching the SPA HTML page so users always get
+        // the latest entry script URL after a plugin update.
+        add_action( 'send_headers',       [ $this, 'add_no_cache_headers' ] );
+    }
+
+    /**
+     * Emit Cache-Control: no-store on pages that host the SPA.
+     * Static assets (JS/CSS) are hash-named and can be cached forever — only
+     * the HTML shell needs to be fresh so the browser picks up new chunk URLs.
+     */
+    public function add_no_cache_headers() {
+        if ( ! $this->enqueue_assets ) {
+            return;
+        }
+        header( 'Cache-Control: no-store, no-cache, must-revalidate, max-age=0' );
+        header( 'Pragma: no-cache' );
     }
 
     /**
