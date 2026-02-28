@@ -619,11 +619,24 @@ class CIG_Importer {
              WHERE p.payment_date = '0000-00-00' OR p.payment_date IS NULL"
         );
 
+        // ── Backfill item name/brand/image_url from linked products ──
+        $names_backfilled = $wpdb->query(
+            "UPDATE {$item_table} ii
+             INNER JOIN {$prod_table} p ON p.id = ii.product_id
+             SET
+                 ii.name      = CASE WHEN (ii.name      IS NULL OR ii.name      = '') THEN p.name      ELSE ii.name      END,
+                 ii.brand     = CASE WHEN (ii.brand     IS NULL OR ii.brand     = '') THEN p.brand     ELSE ii.brand     END,
+                 ii.image_url = CASE WHEN (ii.image_url IS NULL OR ii.image_url = '') THEN p.image_url ELSE ii.image_url END
+             WHERE ii.product_id IS NOT NULL
+               AND (ii.name IS NULL OR ii.name = '' OR ii.brand IS NULL OR ii.brand = '')"
+        );
+
         return [
             'invoices_linked_by_tax_id' => (int) $by_tax,
             'invoices_linked_by_phone'  => (int) $by_phone,
             'invoices_linked_by_name'   => (int) $by_name,
             'items_linked_by_sku'       => (int) $by_sku,
+            'items_names_backfilled'    => (int) $names_backfilled,
         ];
     }
 

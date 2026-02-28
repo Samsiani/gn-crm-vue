@@ -223,8 +223,18 @@ class CIG_Invoice {
             $invoice_ids    = array_column( $rows, 'id' );
             $ids_sql        = implode( ',', array_map( 'intval', $invoice_ids ) );
 
+            $prod_t_batch = $wpdb->prefix . 'cig_products';
             $all_items = $wpdb->get_results(
-                "SELECT * FROM {$items_table} WHERE invoice_id IN ({$ids_sql}) ORDER BY invoice_id, sort_order",
+                "SELECT it.id, it.invoice_id, it.sort_order, it.product_id,
+                    COALESCE(NULLIF(it.name,''), cp.name, cp.name_ka, '') as name,
+                    COALESCE(NULLIF(it.brand,''), cp.brand, '') as brand,
+                    it.sku, it.description,
+                    COALESCE(NULLIF(it.image_url,''), cp.image_url, '') as image_url,
+                    it.qty, it.price, it.total, it.item_status, it.reservation_days, it.warranty
+                 FROM {$items_table} it
+                 LEFT JOIN {$prod_t_batch} cp ON cp.id = it.product_id
+                 WHERE it.invoice_id IN ({$ids_sql})
+                 ORDER BY it.invoice_id, it.sort_order",
                 ARRAY_A
             );
             foreach ( $all_items as $item ) {
@@ -553,8 +563,11 @@ class CIG_Invoice {
 
         // ── 2. Pending reservations ──────────────────────────────────────────
         $pending_sql = "SELECT COUNT(DISTINCT i.id) FROM {$table} i
-             WHERE i.status = 'standard' AND i.lifecycle_status = 'active'
-             AND EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')
+             WHERE i.status = 'standard'
+             AND (i.lifecycle_status = 'reserved' OR (
+                 i.lifecycle_status = 'active'
+                 AND EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')
+             ))
              {$inv_date}{$author_cond}";
         $pending = (int) $wpdb->get_var( $pending_sql );
 
@@ -671,7 +684,7 @@ class CIG_Invoice {
              LEFT JOIN {$pmeta}   pm_sku ON pm_sku.post_id   = it.product_id
                                         AND pm_sku.meta_key   = '_sku'
              LEFT JOIN {$prod_t}  cp     ON cp.id        = it.product_id
-             WHERE i.lifecycle_status = 'active'{$author_cond}
+             WHERE (i.lifecycle_status = 'reserved' OR i.lifecycle_status = 'active'){$author_cond}
              ORDER BY i.created_at ASC
              LIMIT 50",
             ARRAY_A
@@ -770,8 +783,11 @@ class CIG_Invoice {
         // ── 2. Pending reservations ───────────────────────────────────────────
         $pending = (int) $wpdb->get_var(
             "SELECT COUNT(DISTINCT i.id) FROM {$table} i
-             WHERE i.status = 'standard' AND i.lifecycle_status = 'active'
-               AND EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')
+             WHERE i.status = 'standard'
+               AND (i.lifecycle_status = 'reserved' OR (
+                   i.lifecycle_status = 'active'
+                   AND EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')
+               ))
                {$inv_date}"
         );
 
@@ -817,9 +833,11 @@ class CIG_Invoice {
             "SELECT
                 SUM(CASE WHEN lifecycle_status IN ('sold','completed') THEN 1 ELSE 0 END) AS sold,
                 SUM(CASE WHEN status = 'fictive' OR lifecycle_status = 'draft' THEN 1 ELSE 0 END) AS draft,
-                SUM(CASE WHEN status = 'standard' AND lifecycle_status = 'active' AND
-                    EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')
-                    THEN 1 ELSE 0 END) AS reserved
+                SUM(CASE WHEN status = 'standard' AND (
+                    lifecycle_status = 'reserved' OR (
+                        lifecycle_status = 'active' AND
+                        EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')
+                    )) THEN 1 ELSE 0 END) AS reserved
              FROM {$table} i
              WHERE 1=1 {$inv_date}",
             ARRAY_A
@@ -1023,9 +1041,19 @@ class CIG_Invoice {
         if ( $pre_items !== null ) {
             $items_rows = $pre_items;
         } else {
+            $prod_t_single = $wpdb->prefix . 'cig_products';
             $items_rows = $wpdb->get_results(
                 $wpdb->prepare(
-                    "SELECT * FROM " . self::items_table() . " WHERE invoice_id = %d ORDER BY sort_order",
+                    "SELECT it.id, it.invoice_id, it.sort_order, it.product_id,
+                        COALESCE(NULLIF(it.name,''), cp.name, cp.name_ka, '') as name,
+                        COALESCE(NULLIF(it.brand,''), cp.brand, '') as brand,
+                        it.sku, it.description,
+                        COALESCE(NULLIF(it.image_url,''), cp.image_url, '') as image_url,
+                        it.qty, it.price, it.total, it.item_status, it.reservation_days, it.warranty
+                     FROM " . self::items_table() . " it
+                     LEFT JOIN {$prod_t_single} cp ON cp.id = it.product_id
+                     WHERE it.invoice_id = %d
+                     ORDER BY it.sort_order",
                     $row['id']
                 ),
                 ARRAY_A
