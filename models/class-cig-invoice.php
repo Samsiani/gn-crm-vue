@@ -99,20 +99,20 @@ class CIG_Invoice {
                     ))";
                     break;
                 case 'reserved':
-                    $where[] = "(i.lifecycle_status NOT IN ('canceled','cancelled') AND (
-                        i.lifecycle_status = 'reserved' OR (
-                            i.lifecycle_status = 'active' AND EXISTS (
-                                SELECT 1 FROM {$items_table} it
-                                WHERE it.invoice_id = i.id AND it.item_status = 'reserved'
-                            )
-                        )
-                    ))";
+                    $where[] = "(i.lifecycle_status NOT IN ('canceled','cancelled')
+                        AND EXISTS (
+                            SELECT 1 FROM {$items_table} it
+                            WHERE it.invoice_id = i.id AND it.item_status = 'reserved'
+                        ))";
                     break;
                 case 'canceled':
                     $where[] = "(i.lifecycle_status IN ('canceled','cancelled') OR (
-                        i.lifecycle_status = 'active' AND EXISTS (
+                        EXISTS (
                             SELECT 1 FROM {$items_table} it
                             WHERE it.invoice_id = i.id AND it.item_status = 'canceled'
+                        ) AND NOT EXISTS (
+                            SELECT 1 FROM {$items_table} it2
+                            WHERE it2.invoice_id = i.id AND it2.item_status = 'reserved'
                         )
                     ))";
                     break;
@@ -581,10 +581,7 @@ class CIG_Invoice {
         $pending_sql = "SELECT COUNT(DISTINCT i.id) FROM {$table} i
              WHERE i.status = 'standard'
              AND i.lifecycle_status NOT IN ('canceled','cancelled')
-             AND (i.lifecycle_status = 'reserved' OR (
-                 i.lifecycle_status = 'active'
-                 AND EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')
-             ))
+             AND EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')
              {$inv_date}{$author_cond}";
         $pending = (int) $wpdb->get_var( $pending_sql );
 
@@ -705,8 +702,7 @@ class CIG_Invoice {
              LEFT JOIN {$pmeta}   pm_sku ON pm_sku.post_id   = it.product_id
                                         AND pm_sku.meta_key   = '_sku'
              LEFT JOIN {$prod_t}  cp     ON cp.id        = it.product_id
-             WHERE i.lifecycle_status NOT IN ('canceled','cancelled')
-               AND (i.lifecycle_status = 'reserved' OR i.lifecycle_status = 'active'){$author_cond}
+             WHERE i.lifecycle_status NOT IN ('canceled','cancelled'){$author_cond}
              ORDER BY i.created_at ASC
              LIMIT 50",
             ARRAY_A
@@ -814,10 +810,7 @@ class CIG_Invoice {
             "SELECT COUNT(DISTINCT i.id) FROM {$table} i
              WHERE i.status = 'standard'
                AND i.lifecycle_status NOT IN ('canceled','cancelled')
-               AND (i.lifecycle_status = 'reserved' OR (
-                   i.lifecycle_status = 'active'
-                   AND EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')
-               ))
+               AND EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')
                {$author_clause} {$inv_date}"
         );
 
@@ -863,12 +856,13 @@ class CIG_Invoice {
             "SELECT
                 SUM(CASE WHEN lifecycle_status IN ('sold','completed') THEN 1 ELSE 0 END) AS sold,
                 SUM(CASE WHEN status = 'fictive' OR lifecycle_status = 'draft' THEN 1 ELSE 0 END) AS draft,
-                SUM(CASE WHEN lifecycle_status NOT IN ('canceled','cancelled') AND status = 'standard' AND (
-                    lifecycle_status = 'reserved' OR (
-                        lifecycle_status = 'active' AND
-                        EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')
-                    )) THEN 1 ELSE 0 END) AS reserved,
-                SUM(CASE WHEN lifecycle_status IN ('canceled','cancelled') THEN 1 ELSE 0 END) AS canceled
+                SUM(CASE WHEN lifecycle_status NOT IN ('canceled','cancelled') AND status = 'standard'
+                    AND EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')
+                    THEN 1 ELSE 0 END) AS reserved,
+                SUM(CASE WHEN lifecycle_status IN ('canceled','cancelled')
+                    OR (EXISTS (SELECT 1 FROM {$items_t} it3 WHERE it3.invoice_id = i.id AND it3.item_status = 'canceled')
+                        AND NOT EXISTS (SELECT 1 FROM {$items_t} it4 WHERE it4.invoice_id = i.id AND it4.item_status = 'reserved'))
+                    THEN 1 ELSE 0 END) AS canceled
              FROM {$table} i
              WHERE 1=1 {$author_clause} {$inv_date}",
             ARRAY_A
