@@ -38,6 +38,7 @@ class CIG_WC_Stock {
              INNER JOIN {$wpdb->prefix}cig_invoices i ON ii.invoice_id = i.id
              WHERE ii.item_status = 'reserved'
                AND i.status = 'standard'
+               AND i.lifecycle_status NOT IN ('canceled','cancelled')
                AND ii.product_id IN ({$ph})
              GROUP BY ii.product_id",
             ...$ids
@@ -86,7 +87,8 @@ class CIG_WC_Stock {
             "SELECT COALESCE(SUM(ii.qty),0)
              FROM {$wpdb->prefix}cig_invoice_items ii
              INNER JOIN {$wpdb->prefix}cig_invoices i ON ii.invoice_id = i.id
-             WHERE ii.product_id = %d AND ii.item_status = 'reserved' AND i.status = 'standard'",
+             WHERE ii.product_id = %d AND ii.item_status = 'reserved' AND i.status = 'standard'
+               AND i.lifecycle_status NOT IN ('canceled','cancelled')",
             $pid
         ) );
         $wc_product = wc_get_product( $pid );

@@ -97,10 +97,12 @@ class CIG_Invoice {
                     ))";
                     break;
                 case 'reserved':
-                    $where[] = "(i.lifecycle_status = 'reserved' OR (
-                        i.lifecycle_status = 'active' AND EXISTS (
-                            SELECT 1 FROM {$items_table} it
-                            WHERE it.invoice_id = i.id AND it.item_status = 'reserved'
+                    $where[] = "(i.lifecycle_status NOT IN ('canceled','cancelled') AND (
+                        i.lifecycle_status = 'reserved' OR (
+                            i.lifecycle_status = 'active' AND EXISTS (
+                                SELECT 1 FROM {$items_table} it
+                                WHERE it.invoice_id = i.id AND it.item_status = 'reserved'
+                            )
                         )
                     ))";
                     break;
@@ -575,6 +577,7 @@ class CIG_Invoice {
         // ── 2. Pending reservations ──────────────────────────────────────────
         $pending_sql = "SELECT COUNT(DISTINCT i.id) FROM {$table} i
              WHERE i.status = 'standard'
+             AND i.lifecycle_status NOT IN ('canceled','cancelled')
              AND (i.lifecycle_status = 'reserved' OR (
                  i.lifecycle_status = 'active'
                  AND EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')
@@ -698,7 +701,8 @@ class CIG_Invoice {
              LEFT JOIN {$pmeta}   pm_sku ON pm_sku.post_id   = it.product_id
                                         AND pm_sku.meta_key   = '_sku'
              LEFT JOIN {$prod_t}  cp     ON cp.id        = it.product_id
-             WHERE (i.lifecycle_status = 'reserved' OR i.lifecycle_status = 'active'){$author_cond}
+             WHERE i.lifecycle_status NOT IN ('canceled','cancelled')
+               AND (i.lifecycle_status = 'reserved' OR i.lifecycle_status = 'active'){$author_cond}
              ORDER BY i.created_at ASC
              LIMIT 50",
             ARRAY_A
@@ -802,6 +806,7 @@ class CIG_Invoice {
         $pending = (int) $wpdb->get_var(
             "SELECT COUNT(DISTINCT i.id) FROM {$table} i
              WHERE i.status = 'standard'
+               AND i.lifecycle_status NOT IN ('canceled','cancelled')
                AND (i.lifecycle_status = 'reserved' OR (
                    i.lifecycle_status = 'active'
                    AND EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')

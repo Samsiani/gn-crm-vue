@@ -350,6 +350,7 @@ class CIG_Product {
                  INNER JOIN {$inv_table} i ON ii.invoice_id = i.id
                  WHERE ii.item_status = 'reserved'
                    AND i.status = 'standard'
+                   AND i.lifecycle_status NOT IN ('canceled','cancelled')
                    AND ii.product_id IN ({$placeholders})
                  GROUP BY ii.product_id",
                 ...$product_ids
