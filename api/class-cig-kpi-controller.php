@@ -73,7 +73,7 @@ class CIG_KPI_Controller extends CIG_REST_Controller {
             "SELECT COALESCE(SUM(p.amount), 0)
              FROM {$payments_t} p
              JOIN {$invoices_t} i ON i.id = p.invoice_id
-             WHERE i.status = 'standard' AND p.method = 'other'"
+             WHERE i.status = 'standard' AND i.lifecycle_status NOT IN ('canceled','cancelled') AND p.method = 'other'"
         );
 
         return rest_ensure_response( [ 'total' => $total ] );

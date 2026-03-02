@@ -87,12 +87,14 @@ class CIG_Invoice {
                     $where[] = "(i.status = 'fictive' OR i.lifecycle_status IN ('draft','unfinished'))";
                     break;
                 case 'sold':
-                    $where[] = "(i.lifecycle_status IN ('sold','completed') OR (
-                        i.lifecycle_status = 'active' AND NOT EXISTS (
-                            SELECT 1 FROM {$items_table} it
-                            WHERE it.invoice_id = i.id AND it.item_status != 'sold'
-                        ) AND EXISTS (
-                            SELECT 1 FROM {$items_table} it2 WHERE it2.invoice_id = i.id
+                    $where[] = "(i.lifecycle_status NOT IN ('canceled','cancelled') AND (
+                        i.lifecycle_status IN ('sold','completed') OR (
+                            i.lifecycle_status = 'active' AND NOT EXISTS (
+                                SELECT 1 FROM {$items_table} it
+                                WHERE it.invoice_id = i.id AND it.item_status != 'sold'
+                            ) AND EXISTS (
+                                SELECT 1 FROM {$items_table} it2 WHERE it2.invoice_id = i.id
+                            )
                         )
                     ))";
                     break;
@@ -560,7 +562,8 @@ class CIG_Invoice {
         $author_cond      = $author_id ? $wpdb->prepare( ' AND i.author_id = %d', $author_id ) : '';
         $author_cond_bare = $author_id ? $wpdb->prepare( ' AND author_id = %d', $author_id ) : '';
 
-        // ── 1. Core invoice KPIs (standard invoices, date-filtered) ──────────
+        // ── 1. Core invoice KPIs (standard invoices, date-filtered, exclude canceled) ──
+        $not_canceled = "AND i.lifecycle_status NOT IN ('canceled','cancelled')";
         $kpi_row = $wpdb->get_row(
             "SELECT
                 COUNT(*) as total_invoices,
@@ -570,7 +573,7 @@ class CIG_Invoice {
                     THEN GREATEST(0, i.total_amount - i.paid_amount) ELSE 0 END
                 ), 0) as outstanding_balance
              FROM {$table} i
-             WHERE i.status = 'standard' {$inv_date}{$author_cond}",
+             WHERE i.status = 'standard' {$not_canceled} {$inv_date}{$author_cond}",
             ARRAY_A
         );
 
@@ -590,7 +593,7 @@ class CIG_Invoice {
             "SELECT p.method, SUM(p.amount) as total
              FROM {$pays_t} p
              JOIN {$table} i ON i.id = p.invoice_id
-             WHERE i.status = 'standard' {$pay_date}{$author_cond}
+             WHERE i.status = 'standard' {$not_canceled} {$pay_date}{$author_cond}
              GROUP BY p.method",
             ARRAY_A
         );
@@ -606,7 +609,7 @@ class CIG_Invoice {
         // which may contain historical/stale entries from old plugin's _cig_payment_history).
         $total_paid = (float) $wpdb->get_var(
             "SELECT COALESCE(SUM(paid_amount), 0) FROM {$table} i
-             WHERE i.status = 'standard' {$inv_date}{$author_cond}"
+             WHERE i.status = 'standard' {$not_canceled} {$inv_date}{$author_cond}"
         );
 
         // ── 4. Monthly trend (last 6 months) — 2 queries replacing 12 ──────────
@@ -622,7 +625,8 @@ class CIG_Invoice {
                 COALESCE(SUM(CASE WHEN lifecycle_status IN ('sold','completed') THEN 1 ELSE 0 END), 0) AS completed,
                 COALESCE(SUM(GREATEST(0, total_amount - paid_amount)), 0) AS outstanding
              FROM {$table}
-             WHERE status = 'standard' AND created_at >= %s AND created_at <= %s{$author_cond_bare}
+             WHERE status = 'standard' AND lifecycle_status NOT IN ('canceled','cancelled')
+               AND created_at >= %s AND created_at <= %s{$author_cond_bare}
              GROUP BY DATE_FORMAT(created_at, '%%Y-%%m')",
             $six_month_start, $today
         ), ARRAY_A );
@@ -638,7 +642,7 @@ class CIG_Invoice {
                 COALESCE(SUM(p.amount), 0) AS paid
              FROM {$pays_t} p
              JOIN {$table} i ON i.id = p.invoice_id
-             WHERE i.status = 'standard' AND p.method != 'consignment'
+             WHERE i.status = 'standard' {$not_canceled} AND p.method != 'consignment'
                AND p.payment_date >= %s AND p.payment_date <= %s{$author_cond}
              GROUP BY DATE_FORMAT(p.payment_date, '%%Y-%%m')",
             $six_month_start, $today
@@ -730,7 +734,7 @@ class CIG_Invoice {
             "SELECT it.product_id, it.name, SUM(it.qty * it.price) as revenue
              FROM {$items_t} it
              JOIN {$table} i ON i.id = it.invoice_id
-             WHERE i.status = 'standard' AND i.created_at >= %s AND it.item_status != 'canceled'{$author_cond}
+             WHERE i.status = 'standard' {$not_canceled} AND i.created_at >= %s AND it.item_status != 'canceled'{$author_cond}
              GROUP BY it.product_id, it.name
              ORDER BY revenue DESC
              LIMIT 5",
@@ -791,6 +795,9 @@ class CIG_Invoice {
         if ( $from ) $pay_date .= $wpdb->prepare( ' AND p.payment_date >= %s', $from );
         if ( $to )   $pay_date .= $wpdb->prepare( ' AND p.payment_date <= %s', $to );
 
+        // Exclude canceled invoices from all stats
+        $not_canceled = "AND i.lifecycle_status NOT IN ('canceled','cancelled')";
+
         // ── 1. Overview: standard invoices, date-filtered ─────────────────────
         $ov_row = $wpdb->get_row(
             "SELECT
@@ -798,7 +805,7 @@ class CIG_Invoice {
                 COALESCE(SUM(paid_amount), 0) AS total_revenue,
                 COALESCE(SUM(GREATEST(0, total_amount - paid_amount)), 0) AS outstanding_balance
              FROM {$table} i
-             WHERE i.status = 'standard' {$author_clause} {$inv_date}",
+             WHERE i.status = 'standard' {$not_canceled} {$author_clause} {$inv_date}",
             ARRAY_A
         );
 
@@ -819,7 +826,7 @@ class CIG_Invoice {
             "SELECT p.method, SUM(p.amount) AS total
              FROM {$pays_t} p
              JOIN {$table} i ON i.id = p.invoice_id
-             WHERE i.status = 'standard' {$author_clause} {$pay_date}
+             WHERE i.status = 'standard' {$not_canceled} {$author_clause} {$pay_date}
              GROUP BY p.method",
             ARRAY_A
         );
@@ -837,7 +844,7 @@ class CIG_Invoice {
                     COUNT(*) AS invoice_count, COALESCE(SUM(i.paid_amount), 0) AS revenue
              FROM {$table} i
              LEFT JOIN {$user_t} u ON u.id = i.author_id
-             WHERE i.status = 'standard' AND i.author_id IS NOT NULL {$author_clause} {$inv_date}
+             WHERE i.status = 'standard' {$not_canceled} AND i.author_id IS NOT NULL {$author_clause} {$inv_date}
              GROUP BY i.author_id, u.name, u.name_en, u.avatar
              ORDER BY revenue DESC",
             ARRAY_A
@@ -856,11 +863,12 @@ class CIG_Invoice {
             "SELECT
                 SUM(CASE WHEN lifecycle_status IN ('sold','completed') THEN 1 ELSE 0 END) AS sold,
                 SUM(CASE WHEN status = 'fictive' OR lifecycle_status = 'draft' THEN 1 ELSE 0 END) AS draft,
-                SUM(CASE WHEN status = 'standard' AND (
+                SUM(CASE WHEN lifecycle_status NOT IN ('canceled','cancelled') AND status = 'standard' AND (
                     lifecycle_status = 'reserved' OR (
                         lifecycle_status = 'active' AND
                         EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')
-                    )) THEN 1 ELSE 0 END) AS reserved
+                    )) THEN 1 ELSE 0 END) AS reserved,
+                SUM(CASE WHEN lifecycle_status IN ('canceled','cancelled') THEN 1 ELSE 0 END) AS canceled
              FROM {$table} i
              WHERE 1=1 {$author_clause} {$inv_date}",
             ARRAY_A
@@ -869,6 +877,7 @@ class CIG_Invoice {
             'sold'     => (int) ( $lifecycle_rows[0]['sold'] ?? 0 ),
             'draft'    => (int) ( $lifecycle_rows[0]['draft'] ?? 0 ),
             'reserved' => (int) ( $lifecycle_rows[0]['reserved'] ?? 0 ),
+            'canceled' => (int) ( $lifecycle_rows[0]['canceled'] ?? 0 ),
         ];
 
         // ── 6. Fictive stats (date-filtered) ─────────────────────────────────
@@ -892,7 +901,7 @@ class CIG_Invoice {
             "SELECT COALESCE(SUM(p.amount), 0)
              FROM {$pays_t} p
              JOIN {$table} i ON i.id = p.invoice_id
-             WHERE i.status = 'standard' AND p.method = 'other' {$author_clause} {$pay_date}"
+             WHERE i.status = 'standard' {$not_canceled} AND p.method = 'other' {$author_clause} {$pay_date}"
         );
 
         // ── 8. Monthly trend for revenue chart (last 6 months, unfiltered by date picker) ───
@@ -906,7 +915,8 @@ class CIG_Invoice {
             "SELECT DATE_FORMAT(created_at, '%%Y-%%m') AS ym,
                 COALESCE(SUM(total_amount), 0) AS revenue
              FROM {$table}
-             WHERE status = 'standard' AND created_at >= %s AND created_at <= %s {$trend_author}
+             WHERE status = 'standard' AND lifecycle_status NOT IN ('canceled','cancelled')
+               AND created_at >= %s AND created_at <= %s {$trend_author}
              GROUP BY DATE_FORMAT(created_at, '%%Y-%%m')",
             $six_ago, $today
         ), ARRAY_A );
@@ -917,7 +927,7 @@ class CIG_Invoice {
                 COALESCE(SUM(p.amount), 0) AS cash_in
              FROM {$pays_t} p
              JOIN {$table} i ON i.id = p.invoice_id
-             WHERE i.status = 'standard' AND p.method != 'consignment'
+             WHERE i.status = 'standard' {$not_canceled} AND p.method != 'consignment'
                AND p.payment_date >= %s AND p.payment_date <= %s {$trend_pay_author}
              GROUP BY DATE_FORMAT(p.payment_date, '%%Y-%%m')",
             $six_ago, $today
@@ -949,7 +959,7 @@ class CIG_Invoice {
                 SUM(CASE WHEN it.item_status = 'reserved' THEN it.qty ELSE 0 END) AS reserved
              FROM {$items_t} it
              JOIN {$table} i ON i.id = it.invoice_id
-             WHERE i.status = 'standard' AND it.item_status != 'canceled' {$author_clause} {$inv_date}
+             WHERE i.status = 'standard' {$not_canceled} AND it.item_status != 'canceled' {$author_clause} {$inv_date}
              GROUP BY it.product_id
              ORDER BY revenue DESC",
             ARRAY_A
@@ -975,7 +985,7 @@ class CIG_Invoice {
                 COALESCE(SUM(GREATEST(0, i.total_amount - i.paid_amount)), 0) AS outstanding
              FROM {$table} i
              LEFT JOIN {$cust_t2} c ON c.id = i.customer_id
-             WHERE i.status = 'standard' AND i.customer_id IS NOT NULL {$author_clause} {$inv_date}
+             WHERE i.status = 'standard' {$not_canceled} AND i.customer_id IS NOT NULL {$author_clause} {$inv_date}
              GROUP BY i.customer_id, c.name, c.name_en, c.tax_id",
             ARRAY_A
         );

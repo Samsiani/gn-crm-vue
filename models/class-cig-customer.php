@@ -78,7 +78,7 @@ class CIG_Customer {
                  FROM {$invoices_table}
                  WHERE customer_id IN ({$ids_sql})
                    AND status = 'standard'
-                   AND lifecycle_status != 'draft'
+                   AND lifecycle_status NOT IN ('draft','canceled','cancelled')
                  GROUP BY customer_id",
                 ARRAY_A
             );
@@ -171,7 +171,8 @@ class CIG_Customer {
                 COUNT(*) AS invoice_count,
                 COALESCE(SUM(GREATEST(0, total_amount - paid_amount)), 0) AS outstanding
              FROM {$invoices_table}
-             WHERE customer_id = %d AND status = 'standard' AND lifecycle_status != 'draft'",
+             WHERE customer_id = %d AND status = 'standard'
+               AND lifecycle_status NOT IN ('draft','canceled','cancelled')",
             $customer_id
         ), ARRAY_A );
 

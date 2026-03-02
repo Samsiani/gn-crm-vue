@@ -207,7 +207,8 @@ class CIG_User {
                 COUNT(*) AS invoice_count,
                 COALESCE(SUM(GREATEST(0, total_amount - paid_amount)), 0) AS outstanding
              FROM {$invoices_t}
-             WHERE status = 'standard' AND author_id IN ({$ids_sql})
+             WHERE status = 'standard' AND lifecycle_status NOT IN ('canceled','cancelled')
+               AND author_id IN ({$ids_sql})
              GROUP BY author_id",
             ARRAY_A
         );
