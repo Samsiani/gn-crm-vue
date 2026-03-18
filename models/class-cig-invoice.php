@@ -119,10 +119,10 @@ class CIG_Invoice {
             }
         }
 
-        // Outstanding filter: standard, not sold, remaining > 0
+        // Outstanding filter: standard, remaining > 0 (includes consignment on sold invoices)
         if ( $args['outstanding'] ) {
             $where[] = "i.status = 'standard'";
-            $where[] = "i.lifecycle_status NOT IN ('sold','completed')";
+            $where[] = "i.lifecycle_status NOT IN ('canceled','cancelled')";
             $where[] = '(i.total_amount - i.paid_amount) > 0';
         }
 
@@ -569,10 +569,7 @@ class CIG_Invoice {
             "SELECT
                 COUNT(*) as total_invoices,
                 COALESCE(SUM(i.total_amount), 0) as gross_revenue,
-                COALESCE(SUM(
-                    CASE WHEN i.lifecycle_status NOT IN ('sold','completed')
-                    THEN GREATEST(0, i.total_amount - i.paid_amount) ELSE 0 END
-                ), 0) as outstanding_balance
+                COALESCE(SUM(GREATEST(0, i.total_amount - i.paid_amount)), 0) as outstanding_balance
              FROM {$table} i
              WHERE i.status = 'standard' {$not_canceled} {$inv_date}{$author_cond}",
             ARRAY_A
