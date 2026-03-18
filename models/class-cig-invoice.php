@@ -505,7 +505,8 @@ class CIG_Invoice {
 
         $ls = $invoice['lifecycleStatus'] ?? $invoice['lifecycle_status'] ?? 'draft';
 
-        if ( $ls === 'draft' ) return $lifecycle_labels['draft'];
+        // Standard invoices are never Draft — only fictive can be Draft
+        if ( $ls === 'draft' && ( $invoice['status'] ?? '' ) !== 'standard' ) return $lifecycle_labels['draft'];
         if ( $ls === 'completed' || $ls === 'sold' ) return $lifecycle_labels['sold'];
 
         // For 'active' or any other: derive from items
