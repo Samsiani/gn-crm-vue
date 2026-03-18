@@ -84,7 +84,7 @@ class CIG_Invoice {
         if ( ! empty( $args['lifecycle'] ) ) {
             switch ( $args['lifecycle'] ) {
                 case 'draft':
-                    $where[] = "(i.status = 'fictive' OR i.lifecycle_status IN ('draft','unfinished'))";
+                    $where[] = "(i.status = 'fictive' OR (i.status != 'standard' AND i.lifecycle_status IN ('draft','unfinished')))";
                     break;
                 case 'sold':
                     $where[] = "(i.lifecycle_status NOT IN ('canceled','cancelled') AND (
@@ -853,7 +853,7 @@ class CIG_Invoice {
         $lifecycle_rows = $wpdb->get_results(
             "SELECT
                 SUM(CASE WHEN lifecycle_status IN ('sold','completed') THEN 1 ELSE 0 END) AS sold,
-                SUM(CASE WHEN status = 'fictive' OR lifecycle_status = 'draft' THEN 1 ELSE 0 END) AS draft,
+                SUM(CASE WHEN status = 'fictive' OR (status != 'standard' AND lifecycle_status = 'draft') THEN 1 ELSE 0 END) AS draft,
                 SUM(CASE WHEN lifecycle_status NOT IN ('canceled','cancelled') AND status = 'standard'
                     AND EXISTS (SELECT 1 FROM {$items_t} it WHERE it.invoice_id = i.id AND it.item_status = 'reserved')
                     THEN 1 ELSE 0 END) AS reserved,
