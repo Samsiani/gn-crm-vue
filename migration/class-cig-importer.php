@@ -383,6 +383,13 @@ class CIG_Importer {
                   ? $inv['invoice_status']
                   : 'standard';
 
+        // If marked fictive but has payments, it was converted to standard in the old system
+        $has_payments = ! empty( $inv['payments'] ) && is_array( $inv['payments'] ) && count( $inv['payments'] ) > 0;
+        if ( $status === 'fictive' && $has_payments ) {
+            $status    = 'standard';
+            $lifecycle = ( $lifecycle === 'draft' ) ? 'reserved' : $lifecycle;
+        }
+
         // Created date
         $post_date = $inv['post_date'] ?? '';
         $created_at = $post_date ? substr( $post_date, 0, 10 ) : date( 'Y-m-d' );
@@ -562,6 +569,14 @@ class CIG_Importer {
 
         $status     = in_array( $inv['invoice_status'] ?? 'standard', [ 'standard', 'fictive' ], true )
                       ? $inv['invoice_status'] : 'standard';
+
+        // If marked fictive but has payments, it was converted to standard in the old system
+        $has_payments = ! empty( $inv['payments'] ) && is_array( $inv['payments'] ) && count( $inv['payments'] ) > 0;
+        if ( $status === 'fictive' && $has_payments ) {
+            $status    = 'standard';
+            $lifecycle = ( $lifecycle === 'draft' ) ? 'reserved' : $lifecycle;
+        }
+
         $post_date  = $inv['post_date'] ?? '';
         $created_at = $post_date ? substr( $post_date, 0, 10 ) : date( 'Y-m-d' );
         $sold_date  = ! empty( $inv['sold_date'] ) ? $inv['sold_date'] : null;
